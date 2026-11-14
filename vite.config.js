@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const base = '/ClueKeeper/'
+const base = '/clueKeeper/'
 
 export default defineConfig({
   base,

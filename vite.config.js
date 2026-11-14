@@ -1,4 +1,3 @@
-
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
@@ -37,10 +36,37 @@ export default defineConfig({
       },
 
       workbox: {
-        globPatterns: [
-          "**/*.{js,css,html,ico,png,svg,woff2}",
+        cleanupOutdatedCaches: true,
+
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+
+        // No precachear index.html como navegación fija
+        globIgnores: ["**/index.html"],
+        navigateFallback: null,
+
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) =>
+              request.mode === "navigate" &&
+              url.origin === self.location.origin,
+
+            handler: "NetworkFirst",
+
+            options: {
+              cacheName: "cluekeeper-pages-v1",
+
+              networkTimeoutSeconds: 5,
+
+              cacheableResponse: {
+                statuses: [200],
+              },
+
+              expiration: {
+                maxEntries: 10,
+              },
+            },
+          },
         ],
-        navigateFallback: "/index.html",
       },
     }),
   ],

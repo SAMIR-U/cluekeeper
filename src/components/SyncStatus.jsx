@@ -53,21 +53,31 @@ export default function SyncStatus() {
   useEffect(() => {
     let active = true;
 
+    function refreshConnectionStatus() {
+      if (!active) return;
+
+      const connected = navigator.onLine;
+      setOnline(connected);
+
+      return connected;
+    }
+
     function onOnline() {
-      setOnline(true);
-      if (isSyncConfigured()) {
+      if (refreshConnectionStatus() && isSyncConfigured()) {
         syncEvidences().catch(console.error);
       }
     }
 
     function onOffline() {
-      setOnline(false);
+      refreshConnectionStatus();
     }
 
     async function initialize() {
       try {
         await recoverInterruptedSync();
-        if (active && navigator.onLine &&
+
+        if (active &&
+            refreshConnectionStatus() &&
             isSyncConfigured()) {
           await syncEvidences();
         }
@@ -76,15 +86,35 @@ export default function SyncStatus() {
       }
     }
 
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refreshConnectionStatus();
+      }
+    }
+
     initialize();
 
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    window.addEventListener("focus", refreshConnectionStatus);
+    document.addEventListener(
+      "visibilitychange",
+      onVisibilityChange
+    );
 
     return () => {
       active = false;
+
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener(
+        "focus",
+        refreshConnectionStatus
+      );
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibilityChange
+      );
     };
   }, []);
 

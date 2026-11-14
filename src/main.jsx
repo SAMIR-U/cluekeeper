@@ -1,22 +1,13 @@
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
-import { registerSW } from "virtual:pwa-register";
+import PWAUpdatePrompt from "./components/PWAUpdatePrompt.jsx";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <App />
-  </StrictMode>,
+    <PWAUpdatePrompt />
+  </StrictMode>
 );
-registerSW({
-  immediate: true,
-
-  onNeedRefresh() {
-    console.log("Nueva versión disponible");
-  },
-
-  onOfflineReady() {
-    console.log("ClueKeeper lista para funcionar offline");
-  },
-});

@@ -1,0 +1,152 @@
+
+import { db } from "../db/cluekeeperDB";
+
+const API_URL = import.meta.env.VITE_API_BASE_URL;
+
+// Evita dos sincronizaciones simultáneas en la misma pestaña
+let activeSync = null;
+
+export function isSyncConfigured() {
+  return Boolean(API_URL);
+}
+
+async function uploadEvidence(evidence) {
+  if (!API_URL) {
+    throw new Error("Backend de evidencias no configurado");
+  }
+
+  const form = new FormData();
+
+  form.append("evidenceId", evidence.id);
+  form.append("checkpointId", evidence.checkpointId);
+  form.append("type", evidence.type);
+
+  const extension = evidence.type === "PHOTO"
+    ? "jpg"
+    : evidence.blob.type.includes("mp4")
+      ? "m4a"
+      : evidence.blob.type.includes("ogg")
+        ? "ogg"
+        : "webm";
+
+  const filename = `${evidence.id}.${extension}`;
+
+  form.append("file", evidence.blob, filename);
+
+  // Endpoint propuesto: debe acordarse con backend
+  const response = await fetch(
+    `${API_URL.replace(/\/$/, "")}/evidences`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Idempotency-Key": evidence.id,
+      },
+      body: form,
+    }
+  );
+
+  if (!response.ok) {
+    const error = new Error(
+      `El servidor respondió HTTP ${response.status}`
+    );
+
+    error.status = response.status;
+    throw error;
+  }
+
+  const result = await response.json();
+
+  // No basta con recibir cualquier respuesta 200
+  if (
+    result.evidenceId !== evidence.id ||
+    result.status !== "RECEIVED"
+  ) {
+    throw new Error("Confirmación del servidor inválida");
+  }
+
+  return result;
+}
+
+async function runSync() {
+  if (!isSyncConfigured()) {
+    return { configured: false, sent: 0 };
+  }
+
+  if (!navigator.onLine) {
+    return { offline: true, sent: 0 };
+  }
+
+  const pending = await db.evidences
+    .filter(item =>
+      item.status === "PENDING" ||
+      item.status === "FAILED"
+    )
+    .toArray();
+
+  pending.sort((a, b) => a.createdAt - b.createdAt);
+
+  let sent = 0;
+
+  for (const evidence of pending) {
+    const current = await db.evidences.get(evidence.id);
+
+    if (!current ||
+        !["PENDING", "FAILED"].includes(current.status)) {
+      continue;
+    }
+
+    await db.evidences.update(evidence.id, {
+      status: "SENDING",
+      lastError: null,
+    });
+
+    try {
+      await uploadEvidence(current);
+
+      await db.evidences.update(evidence.id, {
+        status: "SENT",
+        syncedAt: Date.now(),
+        lastError: null,
+      });
+
+      sent++;
+    } catch (error) {
+      const needsAttention = [
+        400, 401, 403, 404, 409, 413, 415, 422,
+      ].includes(error.status);
+
+      await db.evidences.update(evidence.id, {
+        status: needsAttention ? "FAILED" : "PENDING",
+        lastError: error.message,
+      });
+
+      // Si falla la red, evitamos insistir con los demás
+      if (!error.status) break;
+    }
+  }
+
+  return { configured: true, sent };
+}
+
+export function syncEvidences() {
+  if (!activeSync) {
+    activeSync = runSync().finally(() => {
+      activeSync = null;
+    });
+  }
+
+  return activeSync;
+}
+
+// Recuperación tras cerrar la aplicación durante un envío.
+// Debe llamarse al iniciar la aplicación.
+export async function recoverInterruptedSync() {
+  await db.evidences
+    .where("status")
+    .equals("SENDING")
+    .modify({
+      status: "PENDING",
+      lastError: "Envío interrumpido; requiere reintento",
+    });
+}

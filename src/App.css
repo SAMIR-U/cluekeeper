@@ -39,3 +39,27 @@
 .gps-test p {
   line-height: 1.6;
 }
+
+.sync-status {
+  width: min(100% - 32px, 560px);
+  margin: 32px auto;
+  padding: 20px;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #17233b;
+}
+
+.sync-status button {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #14213d;
+  color: white;
+  cursor: pointer;
+}
+
+.sync-status button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

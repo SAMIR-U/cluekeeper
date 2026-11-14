@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useGeolocation } from '../hooks/useGeolocation'
 import { validateGeofence } from '../services/geofence'
+import RallyMap from "./RallyMap";
 
 export default function GeolocationTest() {
   const { position, loading, error, getLocation } =
@@ -72,6 +73,7 @@ export default function GeolocationTest() {
               setRadius(Number(event.target.value))
             }
           />
+          {position && <RallyMap position={position} />}
 
           <button
             disabled={!Number.isFinite(radius) ||

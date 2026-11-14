@@ -1,0 +1,53 @@
+
+.camera-evidence {
+  width: min(100% - 32px, 560px);
+  margin: 32px auto;
+  padding: 20px;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  color: #17233b;
+  background: #f8fafc;
+}
+
+.camera-evidence video,
+.camera-evidence img {
+  display: block;
+  width: 100%;
+  max-height: 380px;
+  object-fit: contain;
+  margin: 12px 0;
+  border-radius: 8px;
+  background: #111;
+}
+
+.camera-evidence button {
+  padding: 12px 16px;
+  margin: 8px 8px 8px 0;
+  border: 0;
+  border-radius: 8px;
+  background: #14213d;
+  color: white;
+  cursor: pointer;
+}
+
+.camera-evidence button:disabled {
+  opacity: 0.5;
+}
+
+.file-label {
+  display: block;
+  margin: 16px 0;
+}
+
+.file-label input {
+  display: block;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.photo-card {
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+}

@@ -1,15 +1,19 @@
+
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const base = '/clueKeeper/'
+const base = '/cluekeeper/'
 
 export default defineConfig({
   base,
+
   plugins: [
     react(),
+
     VitePWA({
       registerType: 'prompt',
+
       manifest: {
         name: 'ClueKeeper',
         short_name: 'ClueKeeper',
@@ -17,8 +21,10 @@ export default defineConfig({
         start_url: base,
         scope: base,
         display: 'standalone',
+
         theme_color: '#14213d',
         background_color: '#ffffff',
+
         icons: [
           {
             src: `${base}pwa-192x192.png`,
@@ -32,8 +38,11 @@ export default defineConfig({
           },
         ],
       },
+
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: [
+          '**/*.{js,css,html,ico,png,svg,woff2}',
+        ],
         navigateFallback: 'index.html',
       },
     }),

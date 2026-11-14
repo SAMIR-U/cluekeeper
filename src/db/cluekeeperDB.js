@@ -28,3 +28,23 @@ export async function savePhotoEvidence(blob, checkpointId) {
 export async function deleteEvidence(id) {
   await db.evidences.delete(id);
 }
+
+
+export async function saveAudioEvidence(blob, checkpointId) {
+  if (!(blob instanceof Blob) || blob.size === 0) {
+    throw new Error("La grabación no es válida");
+  }
+
+  const evidence = {
+    id: crypto.randomUUID(),
+    checkpointId,
+    type: "AUDIO",
+    blob,
+    status: "PENDING",
+    createdAt: Date.now(),
+  };
+
+  await db.evidences.add(evidence);
+
+  return evidence.id;
+}

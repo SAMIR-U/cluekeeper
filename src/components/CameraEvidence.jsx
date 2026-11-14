@@ -1,11 +1,6 @@
-
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import {
-  db,
-  savePhotoEvidence,
-  deleteEvidence,
-} from "../db/cluekeeperDB";
+import { db, savePhotoEvidence, deleteEvidence } from "../db/cluekeeperDB";
 import "./CameraEvidence.css";
 
 function SavedPhoto({ evidence }) {
@@ -22,9 +17,7 @@ function SavedPhoto({ evidence }) {
     <article className="photo-card">
       {url && <img src={url} alt="Evidencia almacenada" />}
       <p>Estado: {evidence.status}</p>
-      <small>
-        {new Date(evidence.createdAt).toLocaleString()}
-      </small>
+      <small>{new Date(evidence.createdAt).toLocaleString()}</small>
       <button onClick={() => deleteEvidence(evidence.id)}>
         Eliminar evidencia
       </button>
@@ -32,9 +25,7 @@ function SavedPhoto({ evidence }) {
   );
 }
 
-export default function CameraEvidence({
-  checkpointId = "checkpoint-demo",
-}) {
+export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const requestRef = useRef(0);
@@ -47,19 +38,21 @@ export default function CameraEvidence({
   const [saving, setSaving] = useState(false);
 
   const savedPhotos = useLiveQuery(
-    () => db.evidences
-      .where("checkpointId").equals(checkpointId)
-      .reverse().sortBy("createdAt"),
+    () =>
+      db.evidences
+        .where("checkpointId")
+        .equals(checkpointId)
+        .filter((item) => item.type === "PHOTO")
+        .reverse()
+        .sortBy("createdAt"),
     [checkpointId],
-    []
+    [],
   );
 
   function stopCamera() {
     requestRef.current += 1;
 
-    streamRef.current?.getTracks().forEach(
-      track => track.stop()
-    );
+    streamRef.current?.getTracks().forEach((track) => track.stop());
 
     streamRef.current = null;
     setCameraActive(false);
@@ -68,9 +61,7 @@ export default function CameraEvidence({
   useEffect(() => {
     return () => {
       requestRef.current += 1;
-      streamRef.current?.getTracks().forEach(
-        track => track.stop()
-      );
+      streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
 
@@ -120,7 +111,7 @@ export default function CameraEvidence({
       });
 
       if (requestId !== requestRef.current) {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
         return;
       }
 
@@ -157,19 +148,21 @@ export default function CameraEvidence({
       return;
     }
 
-    context.drawImage(
-      video, 0, 0, canvas.width, canvas.height
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setError("No se pudo capturar la fotografía.");
+          return;
+        }
+
+        setPhoto(blob);
+        stopCamera();
+      },
+      "image/jpeg",
+      0.82,
     );
-
-    canvas.toBlob(blob => {
-      if (!blob) {
-        setError("No se pudo capturar la fotografía.");
-        return;
-      }
-
-      setPhoto(blob);
-      stopCamera();
-    }, "image/jpeg", 0.82);
   }
 
   function handleFile(event) {
@@ -177,8 +170,7 @@ export default function CameraEvidence({
     event.target.value = "";
     if (!file) return;
 
-    if (!file.type.startsWith("image/") ||
-        file.size > 8 * 1024 * 1024) {
+    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
       setError("Selecciona una imagen válida de máximo 8 MB.");
       return;
     }
@@ -211,9 +203,7 @@ export default function CameraEvidence({
       <h2>HU-11 · Evidencia fotográfica</h2>
       <p>Checkpoint de prueba: {checkpointId}</p>
 
-      <button onClick={startCamera}>
-        Abrir cámara
-      </button>
+      <button onClick={startCamera}>Abrir cámara</button>
 
       <label className="file-label">
         Usar cámara del teléfono o seleccionar imagen
@@ -227,18 +217,9 @@ export default function CameraEvidence({
 
       {cameraActive && (
         <div>
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-          />
-          <button onClick={takePhoto}>
-            Tomar fotografía
-          </button>
-          <button onClick={stopCamera}>
-            Cerrar cámara
-          </button>
+          <video ref={videoRef} autoPlay muted playsInline />
+          <button onClick={takePhoto}>Tomar fotografía</button>
+          <button onClick={stopCamera}>Cerrar cámara</button>
         </div>
       )}
 
@@ -249,9 +230,7 @@ export default function CameraEvidence({
           <button onClick={savePhoto} disabled={saving}>
             {saving ? "Guardando..." : "Guardar evidencia"}
           </button>
-          <button onClick={() => setPhoto(null)}>
-            Descartar fotografía
-          </button>
+          <button onClick={() => setPhoto(null)}>Descartar fotografía</button>
         </div>
       )}
 
@@ -260,15 +239,10 @@ export default function CameraEvidence({
 
       <h3>Evidencias locales ({savedPhotos.length})</h3>
 
-      {savedPhotos.length === 0 && (
-        <p>Todavía no hay fotografías guardadas.</p>
-      )}
+      {savedPhotos.length === 0 && <p>Todavía no hay fotografías guardadas.</p>}
 
-      {savedPhotos.map(evidence => (
-        <SavedPhoto
-          key={evidence.id}
-          evidence={evidence}
-        />
+      {savedPhotos.map((evidence) => (
+        <SavedPhoto key={evidence.id} evidence={evidence} />
       ))}
     </section>
   );

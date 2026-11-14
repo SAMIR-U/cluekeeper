@@ -3,8 +3,9 @@ import Dexie from "dexie";
 
 export const db = new Dexie("ClueKeeperDB");
 
-db.version(1).stores({
+db.version(2).stores({
   evidences: "id, checkpointId, type, status, createdAt",
+   rallyContent: "key, rallyId, teamId, checkpointId, kind, unlockedAt",
 });
 
 export async function savePhotoEvidence(blob, checkpointId) {

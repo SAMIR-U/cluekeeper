@@ -1,0 +1,40 @@
+
+.offline-rally {
+  width: min(100% - 32px, 560px);
+  margin: 32px auto;
+  padding: 20px;
+  border: 1px solid #dce3ee;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #17233b;
+}
+
+.offline-rally button {
+  padding: 12px 16px;
+  margin: 6px;
+  border: none;
+  border-radius: 8px;
+  background: #14213d;
+  color: white;
+  cursor: pointer;
+}
+
+.offline-rally button:disabled {
+  opacity: 0.5;
+}
+
+.offline-item {
+  padding: 16px;
+  margin: 16px 0;
+  border: 1px solid #dce3ee;
+  border-radius: 10px;
+  background: white;
+}
+
+.offline-item small {
+  color: #64748b;
+}
+
+.offline-item h4 {
+  margin: 8px 0;
+}

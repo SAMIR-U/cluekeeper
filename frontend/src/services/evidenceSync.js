@@ -1,7 +1,8 @@
 
 import { db } from "../db/cluekeeperDB";
+import { apiUrl, getToken } from "./api";
 
-const API_URL = import.meta.env.VITE_API_BASE_URL;
+const API_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api").replace(/\/$/, "");
 
 // Evita dos sincronizaciones simultáneas en la misma pestaña
 let activeSync = null;
@@ -20,6 +21,7 @@ async function uploadEvidence(evidence) {
   form.append("evidenceId", evidence.id);
   form.append("checkpointId", evidence.checkpointId);
   form.append("type", evidence.type);
+  form.append("capturedAt", String(evidence.createdAt));
 
   const extension = evidence.type === "PHOTO"
     ? "jpg"
@@ -33,23 +35,21 @@ async function uploadEvidence(evidence) {
 
   form.append("file", evidence.blob, filename);
 
-  // Endpoint propuesto: debe acordarse con backend
-  const response = await fetch(
-    `${API_URL.replace(/\/$/, "")}/evidences`,
-    {
+  const token = getToken();
+  const response = await fetch(apiUrl("/evidences"), {
       method: "POST",
       credentials: "include",
       headers: {
         "Idempotency-Key": evidence.id,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: form,
-    }
-  );
+  });
 
   if (!response.ok) {
-    const error = new Error(
-      `El servidor respondió HTTP ${response.status}`
-    );
+    let message = `El servidor respondió HTTP ${response.status}`;
+    try { message = (await response.json())?.error?.message || message; } catch { /* plain text response */ }
+    const error = new Error(message);
 
     error.status = response.status;
     throw error;

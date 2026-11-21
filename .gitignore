@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local agent guidance installed for this workspace
+.agents/skills/modern-web-guidance/
+skills-lock.json

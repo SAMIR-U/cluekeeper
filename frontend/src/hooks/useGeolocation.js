@@ -20,7 +20,7 @@ export function useGeolocation() {
   const getLocation = () => {
     if (!('geolocation' in navigator)) {
       setError('Este dispositivo no admite geolocalización.')
-      return
+      return Promise.resolve(null)
     }
 
     const currentRequest = ++requestId.current
@@ -28,22 +28,24 @@ export function useGeolocation() {
     setLoading(true)
     setError(null)
 
-    navigator.geolocation.getCurrentPosition(
+    return new Promise(resolve => navigator.geolocation.getCurrentPosition(
       ({ coords, timestamp }) => {
         if (!mounted.current ||
-            currentRequest !== requestId.current) return
+            currentRequest !== requestId.current) return resolve(null)
 
-        setPosition({
+        const nextPosition = {
           latitude: coords.latitude,
           longitude: coords.longitude,
           accuracy: coords.accuracy,
           timestamp,
-        })
+        }
+        setPosition(nextPosition)
         setLoading(false)
+        resolve(nextPosition)
       },
       (err) => {
         if (!mounted.current ||
-            currentRequest !== requestId.current) return
+            currentRequest !== requestId.current) return resolve(null)
 
         const messages = {
           1: 'Permiso de ubicación denegado.',
@@ -56,13 +58,14 @@ export function useGeolocation() {
           'Ocurrió un error al obtener la ubicación.'
         )
         setLoading(false)
+        resolve(null)
       },
       {
         enableHighAccuracy: true,
         timeout: 15000,
         maximumAge: 0,
       }
-    )
+    ))
   }
 
   return { position, loading, error, getLocation }

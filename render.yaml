@@ -1,0 +1,36 @@
+# Blueprint de Render: PostgreSQL + API. Completa las variables marcadas con sync: false en el panel.
+databases:
+  - name: cluekeeper-db
+    plan: basic-256mb        # el plan free caduca a los 30 días
+    databaseName: cluekeeper
+
+services:
+  - type: web
+    name: cluekeeper-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    plan: starter            # el plan free se duerme a los 15 min sin tráfico
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cluekeeper-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS      # URL del frontend, sin "/" final
+        sync: false
+      - key: APP_BASE_URL      # URL del frontend
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

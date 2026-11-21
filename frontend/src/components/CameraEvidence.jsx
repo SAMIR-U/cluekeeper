@@ -4,14 +4,11 @@ import { db, savePhotoEvidence, deleteEvidence } from "../db/cluekeeperDB";
 import "./CameraEvidence.css";
 
 function SavedPhoto({ evidence }) {
-  const [url, setUrl] = useState("");
+  const [url] = useState(() => URL.createObjectURL(evidence.blob));
 
   useEffect(() => {
-    const objectUrl = URL.createObjectURL(evidence.blob);
-    setUrl(objectUrl);
-
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [evidence.blob]);
+    return () => URL.revokeObjectURL(url);
+  }, [url]);
 
   return (
     <article className="photo-card">
@@ -32,7 +29,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
 
   const [cameraActive, setCameraActive] = useState(false);
   const [photo, setPhoto] = useState(null);
-  const [preview, setPreview] = useState("");
+  const [photoVersion, setPhotoVersion] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
@@ -64,18 +61,6 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
-
-  useEffect(() => {
-    if (!photo) {
-      setPreview("");
-      return;
-    }
-
-    const url = URL.createObjectURL(photo);
-    setPreview(url);
-
-    return () => URL.revokeObjectURL(url);
-  }, [photo]);
 
   useEffect(() => {
     if (cameraActive && videoRef.current) {
@@ -158,6 +143,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
         }
 
         setPhoto(blob);
+        setPhotoVersion(version => version + 1);
         stopCamera();
       },
       "image/jpeg",
@@ -178,6 +164,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
     stopCamera();
     setError("");
     setPhoto(file);
+    setPhotoVersion(version => version + 1);
   }
 
   async function savePhoto() {
@@ -223,10 +210,10 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
         </div>
       )}
 
-      {preview && (
+      {photo && (
         <div>
           <h3>Vista previa</h3>
-          <img src={preview} alt="Fotografía capturada" />
+          <PhotoPreview key={photoVersion} photo={photo} />
           <button onClick={savePhoto} disabled={saving}>
             {saving ? "Guardando..." : "Guardar evidencia"}
           </button>
@@ -246,4 +233,12 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
       ))}
     </section>
   );
+}
+
+function PhotoPreview({ photo }) {
+  const [url] = useState(() => URL.createObjectURL(photo));
+
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  return <img src={url} alt="Fotografía capturada" />;
 }

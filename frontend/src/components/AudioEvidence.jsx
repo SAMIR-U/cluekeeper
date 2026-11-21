@@ -21,14 +21,9 @@ function getSupportedAudioType() {
 }
 
 function AudioPlayer({ blob }) {
-  const [url, setUrl] = useState("");
+  const [url] = useState(() => URL.createObjectURL(blob));
 
-  useEffect(() => {
-    const objectUrl = URL.createObjectURL(blob);
-    setUrl(objectUrl);
-
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [blob]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
 
   return url
     ? <audio controls src={url} preload="metadata" />

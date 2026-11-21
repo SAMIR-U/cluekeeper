@@ -25,13 +25,13 @@ router.post(
   authenticate(['team']),
   limiter({ limit: 60, key: (req) => req.team?.id ?? 'anon' }),
   upload.single('file'),
-  (req, res) => {
+  async (req, res) => {
     const data = parse(fields, req.body);
     const key = req.get('idempotency-key');
     if (key && key !== data.evidenceId) {
       throw badRequest('IDEMPOTENCY_MISMATCH', 'Idempotency-Key debe coincidir con evidenceId');
     }
-    const { status, body } = receiveEvidence(req.rally, req.team, data, req.file);
+    const { status, body } = await receiveEvidence(req.rally, req.team, data, req.file);
     res.status(status).json(body);
   },
 );

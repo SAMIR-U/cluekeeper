@@ -1,7 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { config } from '../config.js';
-
 // Detecta el tipo real por los primeros bytes (el Content-Type del cliente no es fiable)
 export function sniff(buf) {
   if (buf.length < 12) return null;
@@ -15,21 +11,4 @@ export function sniff(buf) {
   if (ascii(4, 8) === 'ftyp') return { mime: 'audio/mp4', ext: 'm4a', type: 'AUDIO' };
   if (ascii(0, 3) === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return { mime: 'audio/mpeg', ext: 'mp3', type: 'AUDIO' };
   return null;
-}
-
-const root = () => path.resolve(config.uploadDir);
-
-// Los ids ya están validados (/^[A-Za-z0-9_-]+$/), no hay path traversal posible
-export function saveFile(rallyId, teamId, id, ext, buffer) {
-  const rel = path.join(rallyId, teamId, `${id}.${ext}`);
-  const abs = path.join(root(), rel);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, buffer, { flag: 'w' });
-  return rel;
-}
-
-export function resolveFile(rel) {
-  const abs = path.resolve(root(), rel);
-  if (!abs.startsWith(root() + path.sep)) throw new Error('Ruta inválida');
-  return abs;
 }

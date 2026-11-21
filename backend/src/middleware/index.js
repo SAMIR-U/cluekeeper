@@ -45,19 +45,19 @@ function extractToken(req) {
 
 // roles: 'team' | 'organizer'
 export function authenticate(roles) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const token = extractToken(req);
     const payload = token ? verifyToken(token, 'session') : null;
     if (!payload) return next(unauthorized('UNAUTHENTICATED', 'Inicia sesión para continuar'));
     if (!roles.includes(payload.role)) return next(forbidden('FORBIDDEN', 'No tienes permiso para esta acción'));
 
     if (payload.role === 'team') {
-      const team = one('SELECT * FROM teams WHERE id=?', payload.sub);
+      const team = await one('SELECT * FROM teams WHERE id=?', payload.sub);
       if (!team) return next(unauthorized('UNAUTHENTICATED', 'La sesión ya no es válida'));
       req.team = team;
-      req.rally = loadRally(team.rally_id);
+      req.rally = await loadRally(team.rally_id);
     } else {
-      const organizer = one('SELECT * FROM organizers WHERE id=?', payload.sub);
+      const organizer = await one('SELECT * FROM organizers WHERE id=?', payload.sub);
       if (!organizer) return next(unauthorized('UNAUTHENTICATED', 'La sesión ya no es válida'));
       req.organizer = organizer;
     }
@@ -67,8 +67,8 @@ export function authenticate(roles) {
 }
 
 // Rally administrado por el organizador autenticado
-export function ownedRally(req) {
-  const rally = loadRally(req.params.id);
+export async function ownedRally(req) {
+  const rally = await loadRally(req.params.id);
   if (!rally || rally.organizer_id !== req.organizer.id) throw notFound('RALLY_NOT_FOUND', 'Rally no encontrado');
   return rally;
 }

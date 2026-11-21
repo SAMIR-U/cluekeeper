@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import fs from 'node:fs';
 import { z } from 'zod';
 import QRCode from 'qrcode';
 import { one, all } from '../db.js';
@@ -7,7 +6,6 @@ import { config } from '../config.js';
 import { notFound, parse } from '../lib/errors.js';
 import { signJoinToken } from '../lib/auth.js';
 import { checkpointCode } from '../lib/crypto.js';
-import { resolveFile } from '../lib/files.js';
 import { authenticate, ownedRally } from '../middleware/index.js';
 import { extendTime, finishRally, publicRally, startRally, loadRally } from '../services/rallies.js';
 import { ranking } from '../services/ranking.js';
@@ -67,45 +65,47 @@ const checkpointInput = z
 
 /* ---------- Rallies ---------- */
 
-router.post('/rallies', (req, res) => {
-  const rally = admin.createRally(req.organizer.id, parse(rallyInput, req.body));
-  res.status(201).json(rallyAdminView(rally));
+router.post('/rallies', async (req, res) => {
+  const rally = await admin.createRally(req.organizer.id, parse(rallyInput, req.body));
+  res.status(201).json(await rallyAdminView(rally));
 });
 
-router.get('/rallies', (req, res) => {
-  const rows = all('SELECT id FROM rallies WHERE organizer_id=? ORDER BY created_at DESC', req.organizer.id);
-  res.json({ rallies: rows.map((r) => rallyAdminView(loadRally(r.id))) });
+router.get('/rallies', async (req, res) => {
+  const rows = await all('SELECT id FROM rallies WHERE organizer_id=? ORDER BY created_at DESC', req.organizer.id);
+  const rallies = [];
+  for (const r of rows) rallies.push(await rallyAdminView(await loadRally(r.id)));
+  res.json({ rallies });
 });
 
 // HU-23: estado, tiempo y equipos registrados
-router.get('/rallies/:id', (req, res) => {
-  const rally = ownedRally(req);
+router.get('/rallies/:id', async (req, res) => {
+  const rally = await ownedRally(req);
   res.json({
-    ...rallyAdminView(rally),
-    teams: ranking(rally),
-    checkpoints: all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id).map(admin.checkpointAdminView),
+    ...(await rallyAdminView(rally)),
+    teams: await ranking(rally),
+    checkpoints: (await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id)).map(admin.checkpointAdminView),
   });
 });
 
-router.put('/rallies/:id', (req, res) => {
-  const rally = ownedRally(req);
+router.put('/rallies/:id', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
   const d = parse(rallyInput, req.body);
-  admin.updateRally(rally.id, d);
-  res.json(rallyAdminView(loadRally(rally.id)));
+  await admin.updateRally(rally.id, d);
+  res.json(await rallyAdminView(await loadRally(rally.id)));
 });
 
-router.delete('/rallies/:id', (req, res) => {
-  const rally = ownedRally(req);
+router.delete('/rallies/:id', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
-  admin.deleteRally(rally.id);
+  await admin.deleteRally(rally.id);
   res.status(204).end();
 });
 
-function rallyAdminView(rally) {
+async function rallyAdminView(rally) {
   const dummy = { extra_minutes: 0 };
   return {
-    ...publicRally(rally, dummy),
+    ...(await publicRally(rally, dummy)),
     code: rally.code,
     extraMinutes: rally.extra_minutes,
     finishedAt: rally.finished_at,
@@ -113,34 +113,34 @@ function rallyAdminView(rally) {
     wrongAttemptPenalty: rally.wrong_attempt_penalty,
     maxAttempts: rally.max_attempts,
     warningMinutes: rally.warning_minutes.split(',').map(Number),
-    teamsCount: one('SELECT COUNT(*) AS n FROM teams WHERE rally_id=?', rally.id).n,
+    teamsCount: (await one('SELECT COUNT(*) AS n FROM teams WHERE rally_id=?', rally.id)).n,
   };
 }
 
 // HU-24
-router.post('/rallies/:id/start', (req, res) => {
-  const rally = startRally(ownedRally(req).id);
-  res.json(rallyAdminView(rally));
+router.post('/rallies/:id/start', async (req, res) => {
+  const rally = await startRally((await ownedRally(req)).id);
+  res.json(await rallyAdminView(rally));
 });
 
 // HU-25
-router.post('/rallies/:id/extend', (req, res) => {
+router.post('/rallies/:id/extend', async (req, res) => {
   const { minutes, teamId } = parse(
     z.object({ minutes: z.number().int().min(1).max(240), teamId: z.string().max(64).optional() }),
     req.body,
   );
-  const rally = extendTime(ownedRally(req).id, minutes, teamId ?? null);
-  res.json(rallyAdminView(rally));
+  const rally = await extendTime((await ownedRally(req)).id, minutes, teamId ?? null);
+  res.json(await rallyAdminView(rally));
 });
 
-router.post('/rallies/:id/finish', (req, res) => {
-  res.json(rallyAdminView(finishRally(ownedRally(req).id)));
+router.post('/rallies/:id/finish', async (req, res) => {
+  res.json(await rallyAdminView(await finishRally((await ownedRally(req)).id)));
 });
 
 /* ---------- QR de acceso (HU-02) ---------- */
 
 router.get('/rallies/:id/join-qr', async (req, res) => {
-  const rally = ownedRally(req);
+  const rally = await ownedRally(req);
   const url = `${config.appBaseUrl}/join?token=${encodeURIComponent(signJoinToken(rally.id))}`;
   if (req.query.format === 'json') return res.json({ url, code: rally.code });
   res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }));
@@ -148,58 +148,58 @@ router.get('/rallies/:id/join-qr', async (req, res) => {
 
 /* ---------- Checkpoints ---------- */
 
-router.get('/rallies/:id/checkpoints', (req, res) => {
-  const rally = ownedRally(req);
+router.get('/rallies/:id/checkpoints', async (req, res) => {
+  const rally = await ownedRally(req);
   res.json({
-    checkpoints: all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id).map(admin.checkpointAdminView),
+    checkpoints: (await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id)).map(admin.checkpointAdminView),
   });
 });
 
-router.post('/rallies/:id/checkpoints', (req, res) => {
-  const rally = ownedRally(req);
+router.post('/rallies/:id/checkpoints', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
-  const cp = admin.createCheckpoint(rally.id, parse(checkpointInput, req.body));
+  const cp = await admin.createCheckpoint(rally.id, parse(checkpointInput, req.body));
   res.status(201).json(admin.checkpointAdminView(cp));
 });
 
-router.put('/rallies/:id/checkpoints/order', (req, res) => {
-  const rally = ownedRally(req);
+router.put('/rallies/:id/checkpoints/order', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
-  admin.reorderCheckpoints(rally.id, parse(z.object({ ids: z.array(z.string()) }), req.body).ids);
+  await admin.reorderCheckpoints(rally.id, parse(z.object({ ids: z.array(z.string()) }), req.body).ids);
   res.status(204).end();
 });
 
-router.put('/rallies/:id/checkpoints/:cid', (req, res) => {
-  const rally = ownedRally(req);
+router.put('/rallies/:id/checkpoints/:cid', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
-  const cp = admin.updateCheckpoint(rally.id, req.params.cid, parse(checkpointInput, req.body));
+  const cp = await admin.updateCheckpoint(rally.id, req.params.cid, parse(checkpointInput, req.body));
   res.json(admin.checkpointAdminView(cp));
 });
 
-router.delete('/rallies/:id/checkpoints/:cid', (req, res) => {
-  const rally = ownedRally(req);
+router.delete('/rallies/:id/checkpoints/:cid', async (req, res) => {
+  const rally = await ownedRally(req);
   admin.assertEditable(rally);
-  admin.deleteCheckpoint(rally.id, req.params.cid);
+  await admin.deleteCheckpoint(rally.id, req.params.cid);
   res.status(204).end();
 });
 
 // QR imprimible del checkpoint (HU-09)
 router.get('/rallies/:id/checkpoints/:cid/qr', async (req, res) => {
-  const rally = ownedRally(req);
-  const cp = one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', req.params.cid, rally.id);
+  const rally = await ownedRally(req);
+  const cp = await one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', req.params.cid, rally.id);
   if (!cp) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
   res.type('image/svg+xml').send(await QRCode.toString(checkpointCode(cp), { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }));
 });
 
 /* ---------- Resultados (HU-26) ---------- */
 
-router.get('/rallies/:id/ranking', (req, res) => {
-  res.json({ ranking: ranking(ownedRally(req)) });
+router.get('/rallies/:id/ranking', async (req, res) => {
+  res.json({ ranking: await ranking(await ownedRally(req)) });
 });
 
-router.get('/rallies/:id/report', (req, res) => {
-  const rally = ownedRally(req);
-  const report = buildReport(rally);
+router.get('/rallies/:id/report', async (req, res) => {
+  const rally = await ownedRally(req);
+  const report = await buildReport(rally);
   const format = req.query.format ?? 'json';
   if (format === 'csv') {
     res.set('Content-Disposition', `attachment; filename="rally-${rally.code}-resultados.csv"`);
@@ -210,9 +210,9 @@ router.get('/rallies/:id/report', (req, res) => {
 
 /* ---------- Evidencias recibidas ---------- */
 
-router.get('/rallies/:id/evidences', (req, res) => {
-  const rally = ownedRally(req);
-  const rows = all(
+router.get('/rallies/:id/evidences', async (req, res) => {
+  const rally = await ownedRally(req);
+  const rows = await all(
     `SELECT e.id, e.type, e.mime, e.size, e.late, e.captured_at, e.received_at, e.checkpoint_id, c.position, t.id AS team_id, t.name AS team_name
      FROM evidences e JOIN teams t ON t.id=e.team_id JOIN checkpoints c ON c.id=e.checkpoint_id
      WHERE t.rally_id=? ORDER BY e.received_at`,
@@ -229,16 +229,14 @@ router.get('/rallies/:id/evidences', (req, res) => {
   });
 });
 
-router.get('/rallies/:id/evidences/:eid/file', (req, res) => {
-  const rally = ownedRally(req);
-  const ev = one(
-    'SELECT e.* FROM evidences e JOIN teams t ON t.id=e.team_id WHERE e.id=? AND t.rally_id=?',
+router.get('/rallies/:id/evidences/:eid/file', async (req, res) => {
+  const rally = await ownedRally(req);
+  const ev = await one(
+    'SELECT e.mime, e.data FROM evidences e JOIN teams t ON t.id=e.team_id WHERE e.id=? AND t.rally_id=?',
     req.params.eid, rally.id,
   );
   if (!ev) throw notFound('EVIDENCE_NOT_FOUND', 'Evidencia no encontrada');
-  const abs = resolveFile(ev.path);
-  if (!fs.existsSync(abs)) throw notFound('EVIDENCE_FILE_MISSING', 'Archivo no disponible');
-  res.type(ev.mime).sendFile(abs);
+  res.type(ev.mime).send(Buffer.from(ev.data));
 });
 
 export default router;

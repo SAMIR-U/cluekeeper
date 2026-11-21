@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "API REST de ClueKeeper (rally de observación)",
+  "description": "API REST de ClueKeeper (rally de observaci\u00f3n) \u00b7 Express + PostgreSQL",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -21,7 +21,11 @@
     "express-rate-limit": "^8.7.5",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.5.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17"
   }
 }

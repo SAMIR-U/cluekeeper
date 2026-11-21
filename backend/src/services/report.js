@@ -1,18 +1,18 @@
-import { all } from '../db.js';
+import { all, one } from '../db.js';
 import { ranking } from './ranking.js';
 import { teamState } from './play.js';
-import { one } from '../db.js';
 
 const iso = (ms) => (ms == null ? null : new Date(ms).toISOString());
 
-export function buildReport(rally) {
-  const cps = all('SELECT id, position, title, points FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id);
-  const rows = ranking(rally);
+export async function buildReport(rally) {
+  const cps = await all('SELECT id, position, title, points FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id);
+  const rows = await ranking(rally);
 
-  const teams = rows.map((r) => {
-    const team = one('SELECT * FROM teams WHERE id=?', r.teamId);
-    const state = teamState(rally, team);
-    return {
+  const teams = [];
+  for (const r of rows) {
+    const team = await one('SELECT * FROM teams WHERE id=?', r.teamId);
+    const state = await teamState(rally, team);
+    teams.push({
       ...r,
       checkpoints: state.items.map(({ cp, p, status, unlockedAt }) => ({
         position: cp.position,
@@ -26,8 +26,8 @@ export function buildReport(rally) {
         secondsTotal: p?.completed_at && unlockedAt ? Math.round((p.completed_at - unlockedAt) / 1000) : null,
         secondsOnChallenge: p?.completed_at && p.arrived_at ? Math.round((p.completed_at - p.arrived_at) / 1000) : null,
       })),
-    };
-  });
+    });
+  }
 
   return {
     generatedAt: new Date().toISOString(),

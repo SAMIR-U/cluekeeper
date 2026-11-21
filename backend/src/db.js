@@ -1,25 +1,18 @@
-import { DatabaseSync } from 'node:sqlite';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
+import pg from 'pg';
 import { config } from './config.js';
 
-if (config.dbPath !== ':memory:') {
-  fs.mkdirSync(path.dirname(path.resolve(config.dbPath)), { recursive: true });
-}
+/* ---------- Esquema (PostgreSQL) ---------- */
 
-export const db = new DatabaseSync(config.dbPath);
-
-db.exec(`
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
-
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS organizers (
   id            TEXT PRIMARY KEY,
   email         TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   name          TEXT,
-  created_at    INTEGER NOT NULL
+  created_at    BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS rallies (
@@ -34,10 +27,10 @@ CREATE TABLE IF NOT EXISTS rallies (
   wrong_attempt_penalty INTEGER NOT NULL DEFAULT 0,
   max_attempts          INTEGER NOT NULL DEFAULT 3,
   warning_minutes       TEXT NOT NULL DEFAULT '15,5',
-  started_at            INTEGER,
-  finished_at           INTEGER,
+  started_at            BIGINT,
+  finished_at           BIGINT,
   finish_reason         TEXT CHECK (finish_reason IN ('TIMEOUT','MANUAL')),
-  created_at            INTEGER NOT NULL
+  created_at            BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS teams (
@@ -48,8 +41,8 @@ CREATE TABLE IF NOT EXISTS teams (
   key_hash      TEXT NOT NULL,
   extra_minutes INTEGER NOT NULL DEFAULT 0,
   score         INTEGER NOT NULL DEFAULT 0,
-  joined_at     INTEGER NOT NULL,
-  finished_at   INTEGER,
+  joined_at     BIGINT NOT NULL,
+  finished_at   BIGINT,
   UNIQUE (rally_id, name_key)
 );
 
@@ -59,9 +52,9 @@ CREATE TABLE IF NOT EXISTS checkpoints (
   position           INTEGER NOT NULL,
   title              TEXT NOT NULL,
   clue_text          TEXT NOT NULL,
-  latitude           REAL NOT NULL,
-  longitude          REAL NOT NULL,
-  radius             REAL NOT NULL DEFAULT 30,
+  latitude           DOUBLE PRECISION NOT NULL,
+  longitude          DOUBLE PRECISION NOT NULL,
+  radius             DOUBLE PRECISION NOT NULL DEFAULT 30,
   validation_methods TEXT NOT NULL DEFAULT '["GEOFENCE"]',
   qr_secret          TEXT NOT NULL,
   nfc_uid            TEXT,
@@ -78,8 +71,8 @@ CREATE TABLE IF NOT EXISTS progress (
   checkpoint_id  TEXT NOT NULL REFERENCES checkpoints(id) ON DELETE CASCADE,
   status         TEXT NOT NULL CHECK (status IN ('ARRIVED','COMPLETED')),
   arrival_method TEXT,
-  arrived_at     INTEGER,
-  completed_at   INTEGER,
+  arrived_at     BIGINT,
+  completed_at   BIGINT,
   points_awarded INTEGER NOT NULL DEFAULT 0,
   attempts       INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (team_id, checkpoint_id)
@@ -91,11 +84,12 @@ CREATE TABLE IF NOT EXISTS submissions (
   checkpoint_id TEXT NOT NULL REFERENCES checkpoints(id) ON DELETE CASCADE,
   correct       INTEGER NOT NULL,
   late          INTEGER NOT NULL DEFAULT 0,
-  captured_at   INTEGER NOT NULL,
-  created_at    INTEGER NOT NULL,
+  captured_at   BIGINT NOT NULL,
+  created_at    BIGINT NOT NULL,
   result_json   TEXT NOT NULL
 );
 
+-- Las fotos y audios se guardan en la base de datos: el servicio no necesita disco persistente
 CREATE TABLE IF NOT EXISTS evidences (
   id            TEXT PRIMARY KEY,
   team_id       TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
@@ -103,21 +97,21 @@ CREATE TABLE IF NOT EXISTS evidences (
   type          TEXT NOT NULL CHECK (type IN ('PHOTO','AUDIO')),
   mime          TEXT NOT NULL,
   size          INTEGER NOT NULL,
-  path          TEXT NOT NULL,
+  data          BYTEA NOT NULL,
   late          INTEGER NOT NULL DEFAULT 0,
-  captured_at   INTEGER NOT NULL,
-  received_at   INTEGER NOT NULL
+  captured_at   BIGINT NOT NULL,
+  received_at   BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id         BIGSERIAL PRIMARY KEY,
   rally_id   TEXT NOT NULL REFERENCES rallies(id) ON DELETE CASCADE,
   team_id    TEXT,
   type       TEXT NOT NULL,
   title      TEXT NOT NULL,
   body       TEXT NOT NULL DEFAULT '',
   data_json  TEXT NOT NULL DEFAULT '{}',
-  created_at INTEGER NOT NULL
+  created_at BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS warnings_sent (
@@ -128,37 +122,108 @@ CREATE TABLE IF NOT EXISTS warnings_sent (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_rally ON notifications(rally_id, id);
 CREATE INDEX IF NOT EXISTS idx_evidences_cp ON evidences(team_id, checkpoint_id);
-`);
+CREATE INDEX IF NOT EXISTS idx_teams_rally ON teams(rally_id);
+`;
 
-export const one = (sql, ...params) => db.prepare(sql).get(...params);
-export const all = (sql, ...params) => db.prepare(sql).all(...params);
-export const run = (sql, ...params) => db.prepare(sql).run(...params);
+/* ---------- Drivers ---------- */
 
-// Transacciones reentrantes + callbacks que se ejecutan solo tras el COMMIT
-let depth = 0;
-let hooks = [];
+const INT8 = 20;
+const toNumber = (v) => (v === null ? null : Number(v));
 
-export function afterCommit(fn) {
-  if (depth === 0) fn();
-  else hooks.push(fn);
+async function createPgDriver() {
+  pg.types.setTypeParser(INT8, toNumber); // BIGINT (epoch ms, COUNT) como number
+  const pool = new pg.Pool({
+    connectionString: config.databaseUrl,
+    max: config.databasePoolMax,
+    ssl: config.databaseSsl ? { rejectUnauthorized: false } : undefined,
+  });
+  pool.on('error', (e) => console.error('[pg pool]', e.message));
+  const norm = (r) => ({ rows: r.rows, rowCount: r.rowCount });
+  return {
+    name: 'postgres',
+    exec: (sql) => pool.query(sql),
+    query: async (sql, params, client) => norm(await (client ?? pool).query(sql, params)),
+    async transaction(fn) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const result = await fn(client);
+        await client.query('COMMIT');
+        return result;
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch { /* conexión caída */ }
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    close: () => pool.end(),
+  };
 }
 
-export function tx(fn) {
-  if (depth > 0) return fn();
-  db.exec('BEGIN IMMEDIATE');
-  depth = 1;
-  try {
-    const result = fn();
-    db.exec('COMMIT');
-    depth = 0;
-    const pending = hooks;
-    hooks = [];
-    pending.forEach((h) => h());
-    return result;
-  } catch (error) {
-    try { db.exec('ROLLBACK'); } catch { /* ya revertida */ }
-    depth = 0;
-    hooks = [];
-    throw error;
+// PGlite = PostgreSQL real compilado a WASM: desarrollo y pruebas sin instalar nada
+async function createPgliteDriver() {
+  const { PGlite, types } = await import('@electric-sql/pglite');
+  let dataDir;
+  if (config.pgliteDir !== ':memory:') {
+    fs.mkdirSync(path.resolve(config.pgliteDir), { recursive: true });
+    dataDir = path.resolve(config.pgliteDir);
   }
+  const db = new PGlite(dataDir, { parsers: { [types.INT8]: toNumber } });
+  await db.waitReady;
+  const norm = (r) => ({ rows: r.rows, rowCount: r.affectedRows ?? r.rows.length });
+  return {
+    name: 'pglite',
+    exec: (sql) => db.exec(sql),
+    query: async (sql, params, client) => norm(await (client ?? db).query(sql, params)),
+    transaction: (fn) => db.transaction((tx) => fn(tx)),
+    close: () => db.close(),
+  };
 }
+
+const driver = config.databaseUrl ? await createPgDriver() : await createPgliteDriver();
+await driver.exec(SCHEMA);
+if (driver.name === 'pglite') console.warn('[db] DATABASE_URL no definido: usando PGlite (solo desarrollo)');
+
+/* ---------- API de consultas ---------- */
+
+const als = new AsyncLocalStorage();
+
+// Los servicios escriben `?`; se convierte a $1, $2… de PostgreSQL
+const toPg = (sql) => {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+};
+
+async function exec(sql, params) {
+  const store = als.getStore();
+  const values = params.map((v) => (v === undefined ? null : v));
+  return driver.query(toPg(sql), values, store?.client);
+}
+
+export const one = async (sql, ...params) => (await exec(sql, params)).rows[0];
+export const all = async (sql, ...params) => (await exec(sql, params)).rows;
+export const run = async (sql, ...params) => {
+  const r = await exec(sql, params);
+  return { changes: r.rowCount, rows: r.rows };
+};
+
+export const isUniqueViolation = (error) => error?.code === '23505';
+
+// Ejecuta `fn` tras el COMMIT (p. ej. emitir eventos SSE solo si la transacción se confirmó)
+export function afterCommit(fn) {
+  const store = als.getStore();
+  if (store) store.hooks.push(fn);
+  else fn();
+}
+
+// Transacción reentrante: dentro de otra transacción solo ejecuta fn
+export async function tx(fn) {
+  if (als.getStore()) return fn();
+  const hooks = [];
+  const result = await driver.transaction((client) => als.run({ client, hooks }, fn));
+  hooks.forEach((h) => h());
+  return result;
+}
+
+export const closeDb = () => driver.close();

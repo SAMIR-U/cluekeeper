@@ -1,9 +1,10 @@
 import { config } from './config.js';
+import { closeDb } from './db.js';
 import { createApp } from './app.js';
 import { bootstrapAdmin } from './services/bootstrap.js';
 import { startTicker } from './services/ticker.js';
 
-bootstrapAdmin();
+await bootstrapAdmin();
 const app = createApp();
 startTicker();
 
@@ -12,5 +13,11 @@ const server = app.listen(config.port, () => {
 });
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    server.close(async () => {
+      await closeDb();
+      process.exit(0);
+    });
+    server.closeAllConnections?.(); // cierra también los streams SSE abiertos
+  });
 }

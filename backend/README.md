@@ -1,17 +1,29 @@
-# ClueKeeper · Backend (v1)
+# ClueKeeper · Backend
 
-API REST para el rally de observación. Node ≥ 22.13 · Express 5 · SQLite (`node:sqlite`, sin dependencias nativas) · JWT en cookie `httpOnly` (o `Authorization: Bearer`).
+API REST para el rally de observación. Node ≥ 22 · Express 5 · PostgreSQL (`pg`) · JWT en cookie `httpOnly` (o `Authorization: Bearer`).
 
 ```bash
 cd backend
 npm install
 cp .env.example .env      # ajusta JWT_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
 npm run seed              # organizador + rally demo (código DEMO01)
+                          # sin DATABASE_URL usa PGlite (Postgres embebido); no necesitas instalar nada
 npm run dev               # http://localhost:4000
 npm test                  # pruebas de extremo a extremo
 ```
 
 En el frontend define `VITE_API_BASE_URL=http://localhost:4000/api` (ya lo usa `evidenceSync.js`).
+
+## Docker
+
+```bash
+cd backend
+echo "JWT_SECRET=$(openssl rand -base64 48)" > .env   # añade además ADMIN_EMAIL y ADMIN_PASSWORD
+docker compose up -d --build
+curl localhost:4000/api/health
+```
+
+Levanta la API junto a un PostgreSQL 16; los datos (incluidas las evidencias) viven en el volumen `cluekeeper-pg`. Respaldo: `docker compose exec db pg_dump -U cluekeeper cluekeeper > respaldo.sql`.
 
 ## Decisiones de diseño
 
@@ -20,6 +32,7 @@ En el frontend define `VITE_API_BASE_URL=http://localhost:4000/api` (ya lo usa `
 - **Offline (HU-20/21)**: `arrive`, `submit` y `evidences` aceptan `capturedAt` (ms epoch) y son idempotentes. El tiempo cuenta al instante de captura, con ventana de gracia `LATE_SYNC_GRACE_MINUTES` tras el fin. La *siguiente* pista solo se obtiene al sincronizar el reto (la respuesta se valida en servidor).
 - **Tiempo**: el plazo de cada equipo = inicio + duración + minutos extra del rally + minutos extra del equipo. El cierre por tiempo se aplica al consultar (no depende de un cron) y un *ticker* envía los avisos de poco tiempo (15 y 5 min, configurable). Un rally cerrado por tiempo se reabre si el organizador amplía lo suficiente; uno finalizado manualmente no.
 - **Ubicación oculta (HU-06)**: con `hideLocation` no se envían coordenadas; la distancia se redondea a 25 m. *Limitación*: con muchas consultas se podría triangular el punto; hay límite de 30/min por equipo.
+- **Base de datos**: PostgreSQL. El esquema se crea solo al arrancar (`CREATE TABLE IF NOT EXISTS`). Las fotos y audios se guardan en la tabla `evidences` (BYTEA), así que el servicio **no necesita disco persistente**. Las acciones de un equipo se serializan con bloqueos de fila (`SELECT … FOR UPDATE`), por lo que es seguro ante doble toque y reintentos simultáneos de la cola offline. Para el aviso de poco tiempo basta una instancia; con varias también es seguro porque la inserción es atómica.
 - **Seguridad**: rate limit en login/join, comprobación de `Origin` (CSRF) con cookies cross-site, bcrypt, validación de archivos por firma binaria, CSV protegido contra inyección de fórmulas, mensajes de error con `{error:{code,message,details}}`.
 
 ## Cobertura de historias de usuario
@@ -65,4 +78,13 @@ POST /auth/team/join ─► GET /rally ─► (organizador inicia) ─► GET /r
 
 ## Pendiente para siguientes versiones
 
-Web Push con la PWA cerrada (las notificaciones ya se guardan y emiten; falta el despachador VAPID), revisión manual de evidencias, rutas escalonadas por equipo, exportación PDF, migración a PostgreSQL y almacenamiento S3 (`lib/files.js` es el único punto de acceso a archivos), y un antifraude de GPS más fuerte (la posición la reporta el cliente).
+Web Push con la PWA cerrada (las notificaciones ya se guardan y emiten; falta el despachador VAPID), revisión manual de evidencias, rutas escalonadas por equipo, exportación PDF, mover las evidencias a almacenamiento de objetos (S3/R2) si el volumen crece, y migraciones versionadas del esquema, y un antifraude de GPS más fuerte (la posición la reporta el cliente).
+
+## Despliegue en Render
+
+1. Crea un **PostgreSQL** en Render y copia su *Internal Database URL*.
+2. Crea un **Web Service** con *Root Directory* `backend`, *Build* `npm ci`, *Start* `npm start`, *Health Check* `/api/health`.
+3. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `APP_BASE_URL`, `TRUST_PROXY=1`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
+   (o usa el `render.yaml` de la raíz del repositorio como Blueprint).
+
+Nota: el Postgres gratuito de Render **caduca a los 30 días**; para el evento usa un plan de pago o haz `pg_dump` antes.

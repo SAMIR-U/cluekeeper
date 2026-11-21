@@ -6,6 +6,10 @@ const num = (value, fallback) => {
   return value !== undefined && value !== '' && Number.isFinite(n) ? n : fallback;
 };
 
+if (isProd && !env.DATABASE_URL) {
+  throw new Error('DATABASE_URL (PostgreSQL) es obligatorio en producción');
+}
+
 if (isProd && (!env.JWT_SECRET || env.JWT_SECRET.length < 32)) {
   throw new Error('JWT_SECRET (mínimo 32 caracteres) es obligatorio en producción');
 }
@@ -27,8 +31,11 @@ export const config = Object.freeze({
   cookieSameSite: env.COOKIE_SAMESITE ?? (isProd ? 'none' : 'lax'),
   cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : isProd,
   trustProxy: num(env.TRUST_PROXY, 0),
-  dbPath: env.DB_PATH ?? './data/cluekeeper.db',
-  uploadDir: env.UPLOAD_DIR ?? './data/uploads',
+  // PostgreSQL. Sin DATABASE_URL (solo desarrollo/tests) se usa PGlite, un Postgres embebido
+  databaseUrl: env.DATABASE_URL,
+  databaseSsl: env.DATABASE_SSL === 'true',
+  databasePoolMax: num(env.DATABASE_POOL_MAX, 10),
+  pgliteDir: env.PGLITE_DIR ?? './data/pglite', // ':memory:' para no persistir
   // Precisión GPS máxima aceptada para validar una geocerca (metros)
   maxGeoAccuracyM: num(env.MAX_GEO_ACCURACY_M, 100),
   // Ventana tras el fin del rally para aceptar datos capturados offline (minutos)

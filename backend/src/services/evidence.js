@@ -1,5 +1,5 @@
 import { one, run, tx } from '../db.js';
-import { sniff, saveFile } from '../lib/files.js';
+import { sniff } from '../lib/files.js';
 import { badRequest, conflict, AppError } from '../lib/errors.js';
 import { assertEvidenceAllowed } from './play.js';
 
@@ -15,13 +15,20 @@ const receipt = (e, replayed = false) => ({
   ...(replayed ? { replayed: true } : {}),
 });
 
+async function replay(team, evidenceId) {
+  const existing = await one(
+    'SELECT id, team_id, checkpoint_id, type, size, received_at FROM evidences WHERE id=?',
+    evidenceId,
+  );
+  if (!existing) return null;
+  if (existing.team_id !== team.id) throw conflict('EVIDENCE_ID_TAKEN', 'Identificador de evidencia en uso');
+  return { status: 200, body: receipt(existing, true) };
+}
+
 // Contrato con evidenceSync.js: { evidenceId, status: "RECEIVED" }
-export function receiveEvidence(rally, team, { evidenceId, checkpointId, type, capturedAt }, file) {
-  const existing = one('SELECT * FROM evidences WHERE id=?', evidenceId);
-  if (existing) {
-    if (existing.team_id !== team.id) throw conflict('EVIDENCE_ID_TAKEN', 'Identificador de evidencia en uso');
-    return { status: 200, body: receipt(existing, true) };
-  }
+export async function receiveEvidence(rally, team, { evidenceId, checkpointId, type, capturedAt }, file) {
+  const prior = await replay(team, evidenceId);
+  if (prior) return prior;
 
   if (!file?.buffer?.length) throw badRequest('FILE_REQUIRED', 'Falta el archivo');
   if (file.buffer.length > MAX_BYTES[type]) {
@@ -32,16 +39,15 @@ export function receiveEvidence(rally, team, { evidenceId, checkpointId, type, c
     throw new AppError(415, 'UNSUPPORTED_MEDIA', `El archivo no es ${type === 'PHOTO' ? 'una imagen' : 'un audio'} válido`);
   }
 
-  return tx(() => {
-    const { t, late, cp } = assertEvidenceAllowed(rally, team, checkpointId, capturedAt);
-    if (late) { /* se acepta dentro de la ventana de gracia y se marca para el reporte */ }
-    const rel = saveFile(rally.id, team.id, evidenceId, detected.ext, file.buffer);
+  return tx(async () => {
+    const { t, late, cp } = await assertEvidenceAllowed(rally, team, checkpointId, capturedAt);
     const receivedAt = Date.now();
-    run(
-      `INSERT INTO evidences (id, team_id, checkpoint_id, type, mime, size, path, late, captured_at, received_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      evidenceId, team.id, cp.id, type, detected.mime, file.buffer.length, rel, late ? 1 : 0, t, receivedAt,
+    const r = await run(
+      `INSERT INTO evidences (id, team_id, checkpoint_id, type, mime, size, data, late, captured_at, received_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
+      evidenceId, team.id, cp.id, type, detected.mime, file.buffer.length, file.buffer, late ? 1 : 0, t, receivedAt,
     );
+    if (r.changes === 0) return (await replay(team, evidenceId)); // subida simultánea del mismo id
     return {
       status: 201,
       body: receipt({ id: evidenceId, checkpoint_id: cp.id, type, size: file.buffer.length, received_at: receivedAt }),

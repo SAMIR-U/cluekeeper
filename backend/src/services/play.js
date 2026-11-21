@@ -11,9 +11,9 @@ const MAX_CLOCK_SKEW = 2 * MIN;
 
 /* ---------- Estado del equipo en la ruta ---------- */
 
-export function teamState(rally, team) {
-  const cps = all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id);
-  const prog = new Map(all('SELECT * FROM progress WHERE team_id=?', team.id).map((p) => [p.checkpoint_id, p]));
+export async function teamState(rally, team) {
+  const cps = await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id);
+  const prog = new Map((await all('SELECT * FROM progress WHERE team_id=?', team.id)).map((p) => [p.checkpoint_id, p]));
   const started = rally.status !== 'NOT_STARTED';
 
   let current = null;
@@ -87,17 +87,17 @@ export function routeView(item) {
   };
 }
 
-export function routeCurrent(rally, team) {
+export async function routeCurrent(rally, team) {
   if (rally.status === 'NOT_STARTED') throw conflict('RALLY_NOT_STARTED', 'El rally aún no ha iniciado');
-  const state = teamState(rally, team);
+  const state = await teamState(rally, team);
   const progress = { completed: state.completed, total: state.total };
   if (!state.current) return { state: 'ALL_COMPLETED', progress, checkpoint: null };
   if (Date.now() >= teamEnd(rally, team)) return { state: 'TIME_UP', progress, checkpoint: null };
   return { state: 'ACTIVE', progress, checkpoint: routeView(state.current) };
 }
 
-export function progressView(rally, team) {
-  const state = teamState(rally, team);
+export async function progressView(rally, team) {
+  const state = await teamState(rally, team);
   return {
     completed: state.completed,
     total: state.total,
@@ -149,8 +149,8 @@ export function effectiveTime(rally, team, capturedAt) {
 
 /* ---------- Helpers ---------- */
 
-function findItem(rally, team, checkpointId) {
-  const state = teamState(rally, team);
+async function findItem(rally, team, checkpointId) {
+  const state = await teamState(rally, team);
   const item = state.items.find((i) => i.cp.id === checkpointId);
   if (!item) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
   return { state, item };
@@ -180,9 +180,9 @@ function geoResult(cp, position) {
 
 /* ---------- HU-06 / HU-08: cercanía y llegada ---------- */
 
-export function proximity(rally, team, checkpointId, body) {
+export async function proximity(rally, team, checkpointId, body) {
   if (rally.status !== 'IN_PROGRESS') throw conflict('RALLY_NOT_ACTIVE', 'El rally no está en curso');
-  const { state, item } = findItem(rally, team, checkpointId);
+  const { state, item } = await findItem(rally, team, checkpointId);
   requireCurrent(state, item);
   if (body.accuracy != null && body.accuracy > config.maxGeoAccuracyM) {
     return { reliable: false, reason: 'LOW_ACCURACY', accuracy: body.accuracy, maxAccuracy: config.maxGeoAccuracyM };
@@ -190,10 +190,14 @@ export function proximity(rally, team, checkpointId, body) {
   return { reliable: true, ...geoResult(item.cp, body) };
 }
 
+// Bloquea la fila del equipo: serializa sus acciones (doble toque, reintentos de la cola offline)
+const lockTeam = (teamId) => one('SELECT * FROM teams WHERE id=? FOR UPDATE', teamId);
+
 export function arrive(rally, team, checkpointId, body) {
-  return tx(() => {
+  return tx(async () => {
+    team = await lockTeam(team.id);
     const { t } = effectiveTime(rally, team, body.capturedAt);
-    const { state, item } = findItem(rally, team, checkpointId);
+    const { state, item } = await findItem(rally, team, checkpointId);
     requireCurrent(state, item);
     const { cp } = item;
 
@@ -223,7 +227,7 @@ export function arrive(rally, team, checkpointId, body) {
       if (!ok) return { arrived: false, reason: 'INVALID_CODE', message: 'El código no corresponde a este checkpoint' };
     }
 
-    run(
+    await run(
       `INSERT INTO progress (team_id, checkpoint_id, status, arrival_method, arrived_at)
        VALUES (?,?,'ARRIVED',?,?)
        ON CONFLICT(team_id, checkpoint_id) DO NOTHING`,
@@ -233,8 +237,8 @@ export function arrive(rally, team, checkpointId, body) {
   });
 }
 
-export function getChallenge(rally, team, checkpointId) {
-  const { item } = findItem(rally, team, checkpointId);
+export async function getChallenge(rally, team, checkpointId) {
+  const { item } = await findItem(rally, team, checkpointId);
   if (item.status === 'LOCKED' || item.status === 'CLUE') {
     throw forbidden('CHECKPOINT_NOT_REACHED', 'Primero debes validar tu llegada al checkpoint');
   }
@@ -243,7 +247,7 @@ export function getChallenge(rally, team, checkpointId) {
 
 /* ---------- HU-11 a HU-14: envío del reto y retroalimentación ---------- */
 
-function evaluate(cp, team, body) {
+async function evaluate(cp, team, body) {
   const answer = jsonParse(cp.answer_json);
   switch (cp.challenge_type) {
     case 'QUESTION': {
@@ -262,7 +266,7 @@ function evaluate(cp, team, body) {
     default: {
       // PHOTO / AUDIO: la evidencia debe haberse recibido antes (sincronizada)
       const ev = body.evidenceId
-        ? one(
+        ? await one(
             'SELECT 1 AS ok FROM evidences WHERE id=? AND team_id=? AND checkpoint_id=? AND type=?',
             body.evidenceId, team.id, cp.id, cp.challenge_type,
           )
@@ -281,22 +285,23 @@ function evaluate(cp, team, body) {
 export function submit(rally, team, checkpointId, body, idempotencyKey) {
   const submissionId = body.submissionId ?? idempotencyKey ?? randomUUID();
 
-  return tx(() => {
-    const prev = one('SELECT * FROM submissions WHERE id=?', submissionId);
+  return tx(async () => {
+    team = await lockTeam(team.id);
+    const prev = await one('SELECT * FROM submissions WHERE id=?', submissionId);
     if (prev) {
       if (prev.team_id !== team.id) throw conflict('SUBMISSION_ID_TAKEN', 'Identificador de envío en uso');
       return { ...jsonParse(prev.result_json), replayed: true };
     }
 
     const { t, late } = effectiveTime(rally, team, body.capturedAt);
-    const { state, item } = findItem(rally, team, checkpointId);
+    const { state, item } = await findItem(rally, team, checkpointId);
     requireCurrent(state, item);
     if (item.status !== 'ARRIVED') {
       throw conflict('NOT_ARRIVED', 'Primero debes validar tu llegada al checkpoint');
     }
     const { cp } = item;
 
-    const correct = evaluate(cp, team, body);
+    const correct = await evaluate(cp, team, body);
     const priorAttempts = item.p.attempts;
     const attempts = priorAttempts + 1;
     const exhausted = !correct && attempts >= rally.max_attempts;
@@ -307,25 +312,25 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
 
     let result;
     if (completed) {
-      run(
+      await run(
         `UPDATE progress SET status='COMPLETED', completed_at=?, points_awarded=?, attempts=?
          WHERE team_id=? AND checkpoint_id=?`,
         t, pointsAwarded, attempts, team.id, cp.id,
       );
-      run('UPDATE teams SET score = score + ? WHERE id=?', pointsAwarded, team.id);
+      await run('UPDATE teams SET score = score + ? WHERE id=?', pointsAwarded, team.id);
 
-      const after = teamState(rally, team);
+      const after = await teamState(rally, team);
       const finished = !after.current;
-      if (finished) run('UPDATE teams SET finished_at=? WHERE id=?', t, team.id);
+      if (finished) await run('UPDATE teams SET finished_at=? WHERE id=?', t, team.id);
 
-      const score = one('SELECT score FROM teams WHERE id=?', team.id).score;
+      const { score } = await one('SELECT score FROM teams WHERE id=?', team.id);
       if (finished) {
-        notify({
+        await notify({
           rallyId: rally.id, teamId: team.id, type: 'ROUTE_COMPLETED',
           title: '¡Ruta completada!', body: 'Terminaste todos los checkpoints.',
         });
       } else {
-        notify({
+        await notify({
           rallyId: rally.id, teamId: team.id, type: 'NEW_CLUE',
           title: 'Nueva pista desbloqueada', body: 'Ya puedes ver la siguiente pista.',
           data: { checkpointId: after.current.cp.id },
@@ -338,14 +343,14 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
         next: finished ? null : routeView(after.current),
       };
     } else {
-      run('UPDATE progress SET attempts=? WHERE team_id=? AND checkpoint_id=?', attempts, team.id, cp.id);
+      await run('UPDATE progress SET attempts=? WHERE team_id=? AND checkpoint_id=?', attempts, team.id, cp.id);
       result = {
         submissionId, correct: false, completed: false, pointsAwarded: 0,
         attemptsLeft: rally.max_attempts - attempts,
       };
     }
 
-    run(
+    await run(
       'INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json) VALUES (?,?,?,?,?,?,?,?)',
       submissionId, team.id, cp.id, correct ? 1 : 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result),
     );
@@ -355,9 +360,9 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
 
 /* ---------- Evidencias (foto / audio) ---------- */
 
-export function assertEvidenceAllowed(rally, team, checkpointId, capturedAt) {
+export async function assertEvidenceAllowed(rally, team, checkpointId, capturedAt) {
   const { t, late } = effectiveTime(rally, team, capturedAt);
-  const { item } = findItem(rally, team, checkpointId);
+  const { item } = await findItem(rally, team, checkpointId);
   // No se aceptan evidencias de checkpoints que el equipo aún no desbloquea
   if (item.status === 'LOCKED') throw forbidden('CHECKPOINT_LOCKED', 'Aún no has desbloqueado este checkpoint');
   return { t, late, cp: item.cp };

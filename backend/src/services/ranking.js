@@ -1,8 +1,8 @@
 import { all } from '../db.js';
 import { teamEnd } from '../lib/time.js';
 
-export function ranking(rally) {
-  const rows = all(
+export async function ranking(rally) {
+  const rows = await all(
     `SELECT t.id, t.name, t.score, t.finished_at, t.extra_minutes, t.joined_at,
        (SELECT COUNT(*) FROM progress p WHERE p.team_id=t.id AND p.status='COMPLETED') AS completed,
        (SELECT MAX(completed_at) FROM progress p WHERE p.team_id=t.id AND p.status='COMPLETED') AS last_completed_at

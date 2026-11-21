@@ -1,11 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 
-process.env.DB_PATH = ':memory:';
-process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'ck-test-'));
+if (!process.env.DATABASE_URL) process.env.PGLITE_DIR = ':memory:';
 process.env.RATE_LIMIT = 'off';
 process.env.CORS_ORIGINS = 'http://localhost:5173';
 
@@ -13,21 +9,22 @@ const { createApp } = await import('../src/app.js');
 const { createOrganizer } = await import('../src/services/bootstrap.js');
 const { run } = await import('../src/db.js');
 const { tick } = await import('../src/services/ticker.js');
+const { closeDb } = await import('../src/db.js');
 
 let server;
 let base;
 
 before(async () => {
-  createOrganizer('org@test.dev', 'clave-segura-1', 'Org');
+  await createOrganizer('org@test.dev', 'clave-segura-1', 'Org');
   server = createApp().listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => {
+after(async () => {
   server.closeAllConnections?.();
   server.close();
-  fs.rmSync(process.env.UPLOAD_DIR, { recursive: true, force: true });
+  await closeDb();
 });
 
 async function call(method, url, { token, body, headers = {}, form } = {}) {
@@ -245,7 +242,7 @@ test('HU-25/23/26: tiempo extra, reapertura tras vencer, reporte CSV seguro', as
   const t2 = join.data.team.id;
 
   // Simula que el rally lleva 61 min (vencido) -> se cierra al consultarlo
-  run('UPDATE rallies SET started_at = ? WHERE id=?', Date.now() - 61 * 60_000, state.rally.id);
+  await run('UPDATE rallies SET started_at = ? WHERE id=?', Date.now() - 61 * 60_000, state.rally.id);
   const st = await call('GET', '/api/rally', { token: join.data.token });
   assert.equal(st.data.rally.status, 'FINISHED');
   assert.equal((await call('POST', `/api/checkpoints/${state.cps[0].id}/proximity`, { token: join.data.token, body: { latitude: 4.6, longitude: -74.07 } })).status, 409);
@@ -262,10 +259,10 @@ test('HU-25/23/26: tiempo extra, reapertura tras vencer, reporte CSV seguro', as
   assert.ok(notes.data.notifications.some((n) => n.type === 'TIME_EXTENDED'));
 
   // aviso de poco tiempo (HU-19): al equipo 2 le quedan ~10 min (< 15)
-  tick();
+  await tick();
   const warn = await call('GET', '/api/notifications', { token: join.data.token });
   assert.ok(warn.data.notifications.some((n) => n.type === 'TIME_WARNING'));
-  tick();
+  await tick();
   const warn2 = await call('GET', '/api/notifications', { token: join.data.token });
   assert.equal(warn2.data.notifications.filter((n) => n.type === 'TIME_WARNING').length, 1, 'no repite el aviso');
 
@@ -291,7 +288,7 @@ test('HU-25/23/26: tiempo extra, reapertura tras vencer, reporte CSV seguro', as
 });
 
 test('otro organizador no accede a rallies ajenos', async () => {
-  createOrganizer('otro@test.dev', 'clave-segura-2');
+  await createOrganizer('otro@test.dev', 'clave-segura-2');
   const login = await call('POST', '/api/auth/organizer/login', { body: { email: 'otro@test.dev', password: 'clave-segura-2' } });
   const r = await call('GET', `/api/admin/rallies/${state.rally.id}`, { token: login.data.token });
   assert.equal(r.status, 404);
@@ -322,4 +319,38 @@ test('SSE entrega notificaciones por el stream', async () => {
   ac.abort();
   assert.match(text, /event: notification/);
   assert.match(text, /RALLY_STARTED/);
+});
+
+test('concurrencia: envíos y evidencias simultáneas no duplican puntos ni fallan', async () => {
+  const org = state.org;
+  const rally = await call('POST', '/api/admin/rallies', { token: org, body: { name: 'Conc', durationMinutes: 30 } });
+  const cp = await call('POST', `/api/admin/rallies/${rally.data.id}/checkpoints`, {
+    token: org,
+    body: { title: 'X', clueText: 'x', latitude: 1, longitude: 1, points: 50,
+      challenge: { type: 'QUESTION', title: 't', instruction: 'i', acceptedAnswers: ['si'] } },
+  });
+  await call('POST', `/api/admin/rallies/${rally.data.id}/start`, { token: org });
+  const join = await call('POST', '/api/auth/team/join', { body: { code: rally.data.code, teamName: 'Carrera' } });
+  const token = join.data.token;
+  const id = cp.data.id;
+
+  const arrivals = await Promise.all(
+    Array.from({ length: 5 }, () => call('POST', `/api/checkpoints/${id}/arrive`, { token, body: { method: 'GEOFENCE', latitude: 1, longitude: 1 } })),
+  );
+  assert.ok(arrivals.every((r) => r.status === 200 && r.data.arrived));
+
+  const submits = await Promise.all(
+    Array.from({ length: 8 }, (_, i) => call('POST', `/api/checkpoints/${id}/submit`, { token, body: { answer: 'si', submissionId: `race-sub-${i}-xxxx` } })),
+  );
+  assert.equal(submits.filter((r) => r.status === 200 && r.data.completed).length, 1);
+  assert.ok(submits.filter((r) => r.status !== 200).every((r) => r.status === 409));
+  const me = await call('GET', '/api/rally', { token });
+  assert.equal(me.data.team.score, 50);
+
+  // mismo evidenceId subido a la vez => una sola fila, todas las respuestas válidas
+  const ups = await Promise.all(
+    Array.from({ length: 4 }, () => call('POST', '/api/evidences', { token, form: pngForm({ evidenceId: 'race-ev-0001', checkpointId: id, type: 'PHOTO' }) })),
+  );
+  assert.ok(ups.every((r) => [200, 201, 409].includes(r.status)), JSON.stringify(ups.map((r) => r.status)));
+  assert.ok(ups.some((r) => r.status === 201));
 });

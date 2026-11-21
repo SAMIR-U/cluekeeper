@@ -1,22 +1,22 @@
 import { randomUUID } from 'node:crypto';
-import { one, all, run, tx } from '../db.js';
+import { one, all, run, tx, isUniqueViolation } from '../db.js';
 import { randomCode, randomSecret, checkpointCode } from '../lib/crypto.js';
 import { conflict, notFound } from '../lib/errors.js';
 
-export function createRally(organizerId, data) {
+export async function createRally(organizerId, data) {
   for (let i = 0; i < 8; i++) {
     const id = randomUUID();
     const code = data.code ?? randomCode(6);
     try {
-      run(
+      await run(
         `INSERT INTO rallies (id, organizer_id, name, code, duration_minutes, wrong_attempt_penalty, max_attempts, warning_minutes, created_at)
          VALUES (?,?,?,?,?,?,?,?,?)`,
         id, organizerId, data.name, code, data.durationMinutes, data.wrongAttemptPenalty,
         data.maxAttempts, data.warningMinutes.join(','), Date.now(),
       );
-      return one('SELECT * FROM rallies WHERE id=?', id);
+      return await one('SELECT * FROM rallies WHERE id=?', id);
     } catch (e) {
-      if (!/UNIQUE/i.test(e.message)) throw e;
+      if (!isUniqueViolation(e)) throw e;
       if (data.code) throw conflict('CODE_TAKEN', 'Ese código de rally ya está en uso');
     }
   }
@@ -60,11 +60,12 @@ function splitChallenge({ type, acceptedAnswers, bearing, tolerance, ...publicPa
 const normUid = (uid) => (uid ? uid.replace(/[^0-9a-f]/gi, '').toLowerCase() : null);
 
 export function createCheckpoint(rallyId, d) {
-  return tx(() => {
-    const { n } = one('SELECT COALESCE(MAX(position),0)+1 AS n FROM checkpoints WHERE rally_id=?', rallyId);
+  return tx(async () => {
+    await run('SELECT 1 FROM rallies WHERE id=? FOR UPDATE', rallyId); // evita posiciones duplicadas
+    const { n } = await one('SELECT COALESCE(MAX(position),0)+1 AS n FROM checkpoints WHERE rally_id=?', rallyId);
     const { type, publicPart, answer } = splitChallenge(d.challenge);
     const id = randomUUID();
-    run(
+    await run(
       `INSERT INTO checkpoints (id, rally_id, position, title, clue_text, latitude, longitude, radius, validation_methods,
          qr_secret, nfc_uid, hide_location, points, challenge_type, challenge_json, answer_json)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -76,11 +77,11 @@ export function createCheckpoint(rallyId, d) {
   });
 }
 
-export function updateCheckpoint(rallyId, id, d) {
-  const cp = one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', id, rallyId);
+export async function updateCheckpoint(rallyId, id, d) {
+  const cp = await one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', id, rallyId);
   if (!cp) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
   const { type, publicPart, answer } = splitChallenge(d.challenge);
-  run(
+  await run(
     `UPDATE checkpoints SET title=?, clue_text=?, latitude=?, longitude=?, radius=?, validation_methods=?, nfc_uid=?,
        hide_location=?, points=?, challenge_type=?, challenge_json=?, answer_json=? WHERE id=?`,
     d.title, d.clueText, d.latitude, d.longitude, d.radius, JSON.stringify(d.validationMethods), normUid(d.nfcUid),
@@ -90,42 +91,46 @@ export function updateCheckpoint(rallyId, id, d) {
 }
 
 export function deleteCheckpoint(rallyId, id) {
-  tx(() => {
-    const r = run('DELETE FROM checkpoints WHERE id=? AND rally_id=?', id, rallyId);
+  return tx(async () => {
+    const r = await run('DELETE FROM checkpoints WHERE id=? AND rally_id=?', id, rallyId);
     if (!r.changes) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
-    compact(rallyId);
+    await compact(rallyId);
   });
 }
 
-function compact(rallyId) {
-  const rows = all('SELECT id FROM checkpoints WHERE rally_id=? ORDER BY position', rallyId);
-  rows.forEach((r, i) => run('UPDATE checkpoints SET position=? WHERE id=?', -(i + 1), r.id));
-  rows.forEach((r, i) => run('UPDATE checkpoints SET position=? WHERE id=?', i + 1, r.id));
+async function compact(rallyId) {
+  const rows = await all('SELECT id FROM checkpoints WHERE rally_id=? ORDER BY position', rallyId);
+  await setOrder(rows.map((r) => r.id));
+}
+
+// Dos fases (negativos y luego positivos) para no chocar con UNIQUE (rally_id, position)
+async function setOrder(ids) {
+  for (const [i, id] of ids.entries()) await run('UPDATE checkpoints SET position=? WHERE id=?', -(i + 1), id);
+  for (const [i, id] of ids.entries()) await run('UPDATE checkpoints SET position=? WHERE id=?', i + 1, id);
 }
 
 export function reorderCheckpoints(rallyId, ids) {
-  tx(() => {
-    const current = all('SELECT id FROM checkpoints WHERE rally_id=?', rallyId).map((r) => r.id).sort();
+  return tx(async () => {
+    const current = (await all('SELECT id FROM checkpoints WHERE rally_id=?', rallyId)).map((r) => r.id).sort();
     if (current.length !== ids.length || [...ids].sort().some((id, i) => id !== current[i])) {
       throw conflict('INVALID_ORDER', 'La lista debe contener exactamente los checkpoints del rally');
     }
-    ids.forEach((id, i) => run('UPDATE checkpoints SET position=? WHERE id=?', -(i + 1), id));
-    ids.forEach((id, i) => run('UPDATE checkpoints SET position=? WHERE id=?', i + 1, id));
+    await setOrder(ids);
   });
 }
 
-export function updateRally(id, d) {
+export async function updateRally(id, d) {
   try {
-    run(
+    await run(
       `UPDATE rallies SET name=?, code=COALESCE(?, code), duration_minutes=?, wrong_attempt_penalty=?, max_attempts=?, warning_minutes=? WHERE id=?`,
       d.name, d.code ?? null, d.durationMinutes, d.wrongAttemptPenalty, d.maxAttempts, d.warningMinutes.join(','), id,
     );
   } catch (e) {
-    if (/UNIQUE/i.test(e.message)) throw conflict('CODE_TAKEN', 'Ese código de rally ya está en uso');
+    if (isUniqueViolation(e)) throw conflict('CODE_TAKEN', 'Ese código de rally ya está en uso');
     throw e;
   }
 }
 
 export function deleteRally(id) {
-  run('DELETE FROM rallies WHERE id=?', id);
+  return run('DELETE FROM rallies WHERE id=?', id);
 }

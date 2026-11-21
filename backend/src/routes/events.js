@@ -9,14 +9,14 @@ const router = Router();
 // Server-Sent Events: nueva pista, aviso de tiempo, tiempo extra, fin del rally.
 // Con EventSource usar { withCredentials: true }. Al reconectar, el navegador envía Last-Event-ID
 // y se reenvían las notificaciones perdidas.
-router.get('/', authenticate(['team', 'organizer']), (req, res) => {
+router.get('/', authenticate(['team', 'organizer']), async (req, res) => {
   let rallyId;
   let teamId = null;
   if (req.role === 'team') {
     rallyId = req.rally.id;
     teamId = req.team.id;
   } else {
-    const rally = loadRally(String(req.query.rallyId ?? ''));
+    const rally = await loadRally(String(req.query.rallyId ?? ''));
     if (!rally || rally.organizer_id !== req.organizer.id) throw notFound('RALLY_NOT_FOUND', 'Rally no encontrado');
     rallyId = rally.id;
   }
@@ -33,7 +33,7 @@ router.get('/', authenticate(['team', 'organizer']), (req, res) => {
   const send = (n) => res.write(`id: ${n.id}\nevent: notification\ndata: ${JSON.stringify(n)}\n\n`);
 
   const lastId = Number(req.get('last-event-id') ?? req.query.after ?? 0) || 0;
-  if (lastId > 0) listNotifications({ rallyId, teamId, afterId: lastId }).forEach(send);
+  if (lastId > 0) (await listNotifications({ rallyId, teamId, afterId: lastId })).forEach(send);
 
   const onNotification = (n) => {
     if (n.rallyId !== rallyId) return;

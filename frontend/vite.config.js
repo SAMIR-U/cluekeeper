@@ -15,11 +15,12 @@ export default defineConfig({
         name: "ClueKeeper",
         short_name: "ClueKeeper",
         description: "Rally de observación interactivo",
+        lang: "es",
         start_url: "/",
         scope: "/",
         display: "standalone",
-        theme_color: "#14213d",
-        background_color: "#ffffff",
+        theme_color: "#047857",
+        background_color: "#f3f8f4",
 
         icons: [
           {

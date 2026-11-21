@@ -1,0 +1,41 @@
+const env = process.env;
+const isProd = env.NODE_ENV === 'production';
+
+const num = (value, fallback) => {
+  const n = Number(value);
+  return value !== undefined && value !== '' && Number.isFinite(n) ? n : fallback;
+};
+
+if (isProd && (!env.JWT_SECRET || env.JWT_SECRET.length < 32)) {
+  throw new Error('JWT_SECRET (mínimo 32 caracteres) es obligatorio en producción');
+}
+
+const origins = (env.CORS_ORIGINS ?? 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+
+export const config = Object.freeze({
+  isProd,
+  port: num(env.PORT, 4000),
+  jwtSecret: env.JWT_SECRET || 'dev-only-secret-change-me-dev-only-secret',
+  // Orígenes del frontend (React) autorizados a llamar a la API con cookies
+  corsOrigins: origins,
+  // URL pública del frontend; se usa para construir el enlace del QR de acceso
+  appBaseUrl: (env.APP_BASE_URL ?? origins[0] ?? 'http://localhost:5173').replace(/\/$/, ''),
+  // Frontend y API en dominios distintos => SameSite=None + Secure
+  cookieSameSite: env.COOKIE_SAMESITE ?? (isProd ? 'none' : 'lax'),
+  cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : isProd,
+  trustProxy: num(env.TRUST_PROXY, 0),
+  dbPath: env.DB_PATH ?? './data/cluekeeper.db',
+  uploadDir: env.UPLOAD_DIR ?? './data/uploads',
+  // Precisión GPS máxima aceptada para validar una geocerca (metros)
+  maxGeoAccuracyM: num(env.MAX_GEO_ACCURACY_M, 100),
+  // Ventana tras el fin del rally para aceptar datos capturados offline (minutos)
+  lateSyncGraceMinutes: num(env.LATE_SYNC_GRACE_MINUTES, 120),
+  teamSessionHours: num(env.TEAM_SESSION_HOURS, 36),
+  organizerSessionHours: num(env.ORGANIZER_SESSION_HOURS, 12),
+  rateLimitEnabled: env.RATE_LIMIT !== 'off',
+  adminEmail: env.ADMIN_EMAIL,
+  adminPassword: env.ADMIN_PASSWORD,
+});

@@ -1,18 +1,16 @@
 
 import { db } from "../db/cluekeeperDB";
-import { apiUrl, getToken } from "./api";
-
-const API_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api").replace(/\/$/, "");
+import { API_BASE, apiUrl, getToken } from "./api";
 
 // Evita dos sincronizaciones simultáneas en la misma pestaña
 let activeSync = null;
 
 export function isSyncConfigured() {
-  return Boolean(API_URL);
+  return Boolean(API_BASE);
 }
 
 async function uploadEvidence(evidence) {
-  if (!API_URL) {
+  if (!API_BASE) {
     throw new Error("Backend de evidencias no configurado");
   }
 

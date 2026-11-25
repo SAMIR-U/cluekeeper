@@ -1,4 +1,10 @@
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api").replace(/\/$/, "");
+export const API_BASE = (
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD
+    ? "https://cluekeeper.onrender.com/api"
+    : "http://localhost:4000/api")
+).replace(/\/$/, "");
 const TOKEN_KEY = "cluekeeper-session-token";
 
 export function getToken() {

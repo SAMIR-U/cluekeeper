@@ -26,16 +26,13 @@ function MapUpdater({ latitude, longitude }) {
 }
 
 export default function RallyMap({ position }) {
-  if (!position) {
-    return <p>Obtén tu ubicación para ver el mapa.</p>;
-  }
-
-  const { latitude, longitude, accuracy } = position;
-  const center = [latitude, longitude];
+  const campus = [5.5530, -73.3567];
+  const center = position ? [position.latitude, position.longitude] : campus;
+  const accuracy = Number.isFinite(position?.accuracy) ? position.accuracy : null;
 
   return (
     <section className="map-section">
-      <h3>Mapa del rally</h3>
+      <div className="map-heading"><div><h3>Mapa del campus</h3><p>{position ? "Punto azul: tu ubicación · verde: UPTC" : "Activa el GPS para mostrar tu ubicación"}</p></div><span className="map-provider">OpenStreetMap</span></div>
 
       <MapContainer
         center={center}
@@ -48,42 +45,18 @@ export default function RallyMap({ position }) {
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        <MapUpdater
-          latitude={latitude}
-          longitude={longitude}
-        />
+        <MapUpdater latitude={center[0]} longitude={center[1]} />
 
-        <Circle
-          center={center}
-          radius={accuracy}
-          pathOptions={{
-            color: "#2563eb",
-            fillColor: "#3b82f6",
-            fillOpacity: 0.15,
-          }}
-        />
-
-        <CircleMarker
-          center={center}
-          radius={8}
-          pathOptions={{
-            color: "#fff",
-            weight: 3,
-            fillColor: "#2563eb",
-            fillOpacity: 1,
-          }}
-        >
-          <Popup>
-            Estás aquí
-            <br />
-            Precisión estimada: {accuracy.toFixed(1)} m
-          </Popup>
+        <CircleMarker center={campus} radius={10} pathOptions={{ color: "#fff", weight: 3, fillColor: "#047857", fillOpacity: 1 }}>
+          <Popup>Campus principal UPTC · Tunja</Popup>
         </CircleMarker>
+        {position && accuracy !== null && <Circle center={center} radius={accuracy} pathOptions={{ color: "#2563eb", fillColor: "#3b82f6", fillOpacity: 0.15 }} />}
+        {position && <CircleMarker center={center} radius={8} pathOptions={{ color: "#fff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }}>
+          <Popup>Estás aquí{accuracy !== null && <><br/>Precisión estimada: {accuracy.toFixed(1)} m</>}</Popup>
+        </CircleMarker>}
       </MapContainer>
 
-      <p>
-        El punto azul representa tu posición estimada.
-      </p>
+      <p className="map-note">La ruta muestra el campus. Los checkpoints mantienen su ubicación oculta hasta desbloquearse.</p>
     </section>
   );
 }

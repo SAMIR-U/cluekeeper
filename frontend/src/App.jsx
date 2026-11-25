@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity, ArrowRight, Award, BookOpen, Check, CheckCircle2, Clock3,
   Cloud, Compass, Flag, LogOut, MapPin, Navigation, QrCode, Radio,
@@ -25,6 +25,18 @@ const ADMIN_NAV = [
   { id: "overview", label: "Resumen", icon: Activity },
   { id: "teams", label: "Equipos", icon: Users },
   { id: "checkpoints", label: "Checkpoints", icon: MapPin },
+];
+const RallyMap = lazy(() => import("./components/RallyMap"));
+
+const STATION_PHOTOS = [
+  { name: "Camilo Torres", file: "camilo-torres.jpg", detail: "Plaza Central Camilo Torres Restrepo", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Comunicado-001-a-la-opinion-publica" },
+  { name: "Biblioteca", file: "biblioteca.jpg", detail: "Biblioteca Central UPTC", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_aca/bibl/4_bpd/blbl_pres.html" },
+  { name: "Goranchacha", file: "goranchacha.jpg", detail: "Registro arqueológico histórico", source: "https://babel.banrepcultural.org/digital/collection/p17054coll34/id/278/" },
+  { name: "Restaurante", file: "restaurante.jpg", detail: "Restaurante estudiantil UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Servicio-de-restaurante-estudiantil-se-continuara-prestando-con-normalidad/" },
+  { name: "Museo LN", file: "museo-ln.jpg", detail: "Museo de Historia Natural Luis Gonzalo Andrade", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/index.html" },
+  { name: "El Muro", file: "el-muro.jpg", detail: "Encuentro cultural en el Muro UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/eventos/det/Unete-al-parche-del-muro-2023.02.09/" },
+  { name: "Bienestar", file: "bienestar.jpg", detail: "Servicios de Bienestar Universitario", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
+  { name: "Rafael Azula", file: "rafael-azula.jpg", detail: "Edificio Rafael Azula Barrera", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/comunicaciones/5_perio/secc/amb/art_03_s3_2022/index.html" },
 ];
 
 function formatDuration(seconds = 0) {
@@ -81,9 +93,10 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
     </section>
     <aside className="campus-aside" aria-label="Lugares del recorrido">
       <div className="campus-topline"><span className="live-dot"/> RUTA UPTC · TUNJA</div>
-      <div className="campus-map-art"><div className="map-orbit orbit-a"/><div className="map-orbit orbit-b"/><div className="map-path"/><span className="campus-pin pin-a">01</span><span className="campus-pin pin-b">02</span><span className="campus-pin pin-c">03</span><span className="campus-pin pin-d">04</span><span className="campus-pin pin-e">05</span><span className="campus-pin pin-f">06</span><span className="campus-pin pin-g">07</span><span className="campus-pin pin-h">08</span><span className="campus-center"><Compass size={34}/></span></div>
-      <div className="campus-places"><span>Camilo Torres</span><span>Biblioteca</span><span>Goranchacha</span><span>Restaurante</span><span>Museo LN</span><span>El Muro</span><span>Bienestar</span><span>Rafael Azula</span></div>
-      <p>Ocho estaciones del campus. Una misión compartida.</p>
+      <div className="campus-photo-grid">{STATION_PHOTOS.map((station, index) => <a className="campus-photo" href={station.source} target="_blank" rel="noreferrer" key={station.file} aria-label={`${station.name}: ${station.detail}. Ver fuente`}>
+        <img src={`/places/${station.file}`} alt={station.detail} loading={index < 4 ? "eager" : "lazy"}/><span className="campus-photo-number">{String(index + 1).padStart(2, "0")}</span><strong>{station.name}</strong>
+      </a>)}</div>
+      <p>Ocho estaciones del campus. Una misión compartida. <span>Fotos: UPTC y Banrepcultural.</span></p>
     </aside>
   </div>;
 }
@@ -95,8 +108,9 @@ function RoutePanel({ route, progress, onRefresh, loading, geo, onProximity, pro
     <section className="panel main-panel">
       <div className="panel-heading"><div><span className="eyebrow">TU MISIÓN ACTUAL</span><h2>{current ? `Checkpoint ${current.position}` : route?.state === "ALL_COMPLETED" ? "Ruta completada" : "Esperando el inicio"}</h2></div><button type="button" className="icon-button" onClick={onRefresh} aria-label="Actualizar ruta" disabled={loading}><RefreshCw size={18} className={loading ? "spin" : ""}/></button></div>
       {loading ? <Skeleton rows={3}/> : current ? <>
+        {STATION_PHOTOS[current.position - 1] && <figure className="station-photo"><img src={`/places/${STATION_PHOTOS[current.position - 1].file}`} alt={STATION_PHOTOS[current.position - 1].detail} loading="lazy"/><figcaption><MapPin size={14}/>{STATION_PHOTOS[current.position - 1].name}</figcaption></figure>}
         <div className="clue-banner"><span className="clue-mark"><BookOpen size={19}/></span><div><span className="eyebrow">PISTA DESBLOQUEADA</span><h3>{current.clue?.content?.title || `Pista ${current.position}`}</h3><p>{current.clue?.content?.text || "Acércate al siguiente lugar para descubrir la pista."}</p></div></div>
-        <div className="route-map-box"><div className="route-map-lines"/><span className="route-map-label label-campus">CAMPUS UPTC</span>{steps.map((step, index) => <span key={step.id} className={`route-point route-point-${index + 1} ${step.status === "COMPLETED" ? "visited" : step.id === current.id ? "current" : "locked"}`} title={`Checkpoint ${step.position}`}>{step.status === "COMPLETED" ? <Check size={13}/> : String(step.position).padStart(2, "0")}</span>)}<span className="map-legend"><i/>Tu ruta · {progress?.completed || 0}/{progress?.total || 0} completados</span></div>
+        <Suspense fallback={<div className="map-loading" role="status">Cargando mapa del campus…</div>}><RallyMap position={geo.position}/></Suspense>
         <div className="location-row"><div className="location-copy"><span className="location-icon"><MapPin size={18}/></span><div><strong>{geo.position ? "Ubicación obtenida" : "Valida tu proximidad"}</strong><span>{proximity?.reliable === false ? "Señal GPS poco precisa. Busca un espacio abierto o valida con el QR." : proximity ? proximity.inside ? "Estás dentro del perímetro del checkpoint." : Number.isFinite(proximity.remaining) ? `Aproximadamente ${Math.max(0, proximity.remaining)} m para llegar.` : "No se pudo calcular la distancia. Intenta de nuevo." : "El punto exacto se revela en el campus."}</span></div></div><button type="button" className="button button-dark" disabled={geo.loading || busy} onClick={onProximity}>{geo.loading || busy ? "Localizando…" : <><Navigation size={17}/> Verificar GPS</>}</button></div>
         {geo.error && <p className="form-error" role="alert">{geo.error}</p>}
       </> : <div className="empty-state"><span className="empty-icon"><Clock3 size={25}/></span><h3>{route?.state === "ALL_COMPLETED" ? "¡Lo lograron!" : "El rally aún no comienza"}</h3><p>{route?.state === "ALL_COMPLETED" ? "Su equipo recorrió todos los puntos de la ruta." : "La pista aparecerá aquí cuando organización inicie el evento."}</p></div>}

@@ -39,7 +39,7 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
 
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,jpg,jpeg,webp,svg,woff2}"],
 
         // No precachear index.html como navegación fija
         globIgnores: ["**/index.html"],

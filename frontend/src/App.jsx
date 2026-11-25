@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity, ArrowRight, Award, BookOpen, Check, CheckCircle2, Clock3,
+  Activity, ArrowLeft, ArrowRight, Award, BookOpen, Check, CheckCircle2, Clock3,
   Cloud, Compass, Flag, LogOut, MapPin, Navigation, QrCode, Radio,
   RefreshCw, Rocket, ShieldCheck, Sparkles, Target, Trophy,
   Users, Wifi, X,
@@ -71,6 +71,10 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
   const [teamName, setTeamName] = useState("");
   const [code, setCode] = useState(initialCode);
   const [error, setError] = useState("");
+  const [activeStation, setActiveStation] = useState(0);
+  const touchStart = useRef(null);
+  const station = STATION_PHOTOS[activeStation];
+  const showStation = index => setActiveStation((index + STATION_PHOTOS.length) % STATION_PHOTOS.length);
   async function submit(event) {
     event.preventDefault(); setError("");
     try { await onJoin(teamName.trim(), code.trim().toUpperCase()); }
@@ -93,10 +97,17 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
     </section>
     <aside className="campus-aside" aria-label="Lugares del recorrido">
       <div className="campus-topline"><span className="live-dot"/> RUTA UPTC · TUNJA</div>
-      <div className="campus-photo-grid">{STATION_PHOTOS.map((station, index) => <a className="campus-photo" href={station.source} target="_blank" rel="noreferrer" key={station.file} aria-label={`${station.name}: ${station.detail}. Ver fuente`}>
-        <img src={`/places/${station.file}`} alt={station.detail} loading={index < 4 ? "eager" : "lazy"}/><span className="campus-photo-number">{String(index + 1).padStart(2, "0")}</span><strong>{station.name}</strong>
-      </a>)}</div>
-      <p>Ocho estaciones del campus. Una misión compartida. <span>Fotos: UPTC y Banrepcultural.</span></p>
+      <div className="campus-carousel" role="region" aria-roledescription="carrusel" aria-label="Estaciones del rally UPTC" tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") { event.preventDefault(); showStation(activeStation + 1); } if (event.key === "ArrowLeft") { event.preventDefault(); showStation(activeStation - 1); } }} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current == null) return; const swipe = event.changedTouches[0].clientX - touchStart.current; if (Math.abs(swipe) > 45) showStation(activeStation + (swipe < 0 ? 1 : -1)); touchStart.current = null; }}>
+        <figure className="campus-slide" key={station.file}>
+          <img src={`/places/${station.file}`} alt={station.detail}/>
+          <span className="campus-slide-count">{String(activeStation + 1).padStart(2, "0")} <i/> {String(STATION_PHOTOS.length).padStart(2, "0")}</span>
+          <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p><a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a></figcaption>
+          <button type="button" className="campus-carousel-arrow previous" onClick={() => showStation(activeStation - 1)} aria-label="Ver estación anterior"><ArrowLeft size={19}/></button>
+          <button type="button" className="campus-carousel-arrow next" onClick={() => showStation(activeStation + 1)} aria-label="Ver estación siguiente"><ArrowRight size={19}/></button>
+        </figure>
+        <div className="campus-carousel-controls"><span className="carousel-counter">{activeStation + 1} de {STATION_PHOTOS.length}</span><div className="carousel-dots" role="group" aria-label="Elegir estación">{STATION_PHOTOS.map((item, index) => <button key={item.file} type="button" className={index === activeStation ? "carousel-dot active" : "carousel-dot"} onClick={() => showStation(index)} aria-label={`Ver ${item.name}`} aria-current={index === activeStation ? "true" : undefined}/>)}</div><span className="carousel-hint">Desliza para explorar</span></div>
+      </div>
+      <p className="campus-carousel-footer">Ocho lugares del campus. Una misión compartida.</p>
     </aside>
   </div>;
 }

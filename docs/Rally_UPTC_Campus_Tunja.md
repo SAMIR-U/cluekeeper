@@ -31,11 +31,11 @@ En cada estación, ClueKeeper les mostrará la pista y el reto. Confirmen su lle
 
 **Reto:** Tomen una fotografía de la señal de la biblioteca o de un detalle arquitectónico de su fachada. Eviten incluir rostros.
 
-### 3. Templo de Goranchacha
+### 3. Auditorio Goranchacha · Edificio de Posgrados
 
-**Pista para el equipo:** Muy cerca del saber se encuentra un espacio ligado a la memoria muisca. Busquen el Templo de Goranchacha y observen sus señales desde el sendero público.
+**Pista para el equipo:** Diríjanse al Edificio de Posgrados. Allí encontrarán un auditorio que lleva el nombre de un personaje de la tradición muisca: Goranchacha.
 
-**Reto:** Tomen una fotografía de la señal o de un detalle visible del Templo de Goranchacha desde el sendero. No ingresen ni pisen áreas arqueológicas.
+**Reto:** Tomen una fotografía del nombre o de un detalle exterior del Edificio de Posgrados. No interrumpan actividades ni fotografíen personas identificables.
 
 ### 4. Restaurante Estudiantil
 
@@ -89,5 +89,6 @@ Han reunido las ocho huellas del campus. Antes de cerrar la misión, revisen que
 - [Plano general oficial del campus UPTC Tunja](https://www.uptc.edu.co/export/sites/default/universidad/modules/doc/2019/Induccion_Mapa.pdf): identifica Plaza Camilo Torres Restrepo, Biblioteca Central, Restaurante Estudiantil, Bienestar Universitario, Edificio Rafael Azula y Museo de Historia Natural.
 - [Museo de Historia Natural Luis Gonzalo Andrade — UPTC](https://uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/01_quienes.html).
 - [Biblioteca Jorge Palacios Preciado — coordenadas de OpenStreetMap vía Mapcarta](https://mapcarta.com/es/W531693752).
-- [Templo de Goranchacha — ubicación de OpenStreetMap vía Mapcarta](https://mapcarta.com/N7737952225).
+- [Auditorio Goranchacha en el Edificio de Posgrados — UPTC](https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Nuevo-Auditorio-Goranchacha-de-la-UPTC-abrio-sus-puertas-a-la-comunidad-universitaria/).
+- [Nuevo Edificio de Posgrados UPTC — OpenStreetMap vía Mapcarta](https://mapcarta.com/es/W581353746): referencia para la coordenada GPS de esa estación; comprobarla en el punto de acceso al auditorio.
 - [Edificio Rafael Azula Barrera — coordenadas de OpenStreetMap vía Mapcarta](https://mapcarta.com/es/W793306027).

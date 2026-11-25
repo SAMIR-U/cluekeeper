@@ -58,9 +58,9 @@ if (uptc && uptc.status !== 'NOT_STARTED') {
       challenge: { type: 'PHOTO', title: 'Huellas de conocimiento', description: 'La fachada también cuenta una historia.', instruction: 'Toma una foto de la señal o de un detalle arquitectónico de la biblioteca. Evita incluir rostros.' },
     },
     {
-      title: 'Templo de Goranchacha', clueText: 'Muy cerca del saber se encuentra un espacio ligado a la memoria muisca. Busca el Templo de Goranchacha y observa sus señales desde el sendero público.',
-      latitude: 5.55235, longitude: -73.35742,
-      challenge: { type: 'PHOTO', title: 'Memoria muisca', description: 'Una huella cultural forma parte de la historia del campus.', instruction: 'Fotografía la señal o un detalle visible del Templo de Goranchacha desde el sendero. No ingreses ni pises áreas arqueológicas.' },
+      title: 'Auditorio Goranchacha', clueText: 'Dirígete al Edificio de Posgrados. Allí encontrarás un auditorio que lleva el nombre de un personaje de la tradición muisca: Goranchacha.',
+      latitude: 5.54826, longitude: -73.35577,
+      challenge: { type: 'PHOTO', title: 'Una puerta al conocimiento', description: 'El Auditorio Goranchacha es un espacio de encuentro académico y cultural.', instruction: 'Toma una fotografía del nombre o de un detalle exterior del Edificio de Posgrados. No interrumpas actividades ni fotografíes personas identificables.' },
     },
     {
       title: 'Restaurante Estudiantil', clueText: 'Sigue hacia el espacio universitario que reúne a la comunidad alrededor de la comida. No necesitas comprar ni entrar.',

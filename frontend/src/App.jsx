@@ -31,10 +31,10 @@ const RallyMap = lazy(() => import("./components/RallyMap"));
 const STATION_PHOTOS = [
   { name: "Camilo Torres", file: "camilo-torres.jpg", detail: "Plaza Central Camilo Torres Restrepo", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Comunicado-001-a-la-opinion-publica" },
   { name: "Biblioteca", file: "biblioteca.jpg", detail: "Biblioteca Central UPTC", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_aca/bibl/4_bpd/blbl_pres.html" },
-  { name: "Goranchacha", file: "goranchacha.jpg", detail: "Registro arqueológico histórico", source: "https://babel.banrepcultural.org/digital/collection/p17054coll34/id/278/" },
+  { name: "Goranchacha", file: "goranchacha.jpg", detail: "Auditorio Goranchacha · Edificio de Posgrados", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Nuevo-Auditorio-Goranchacha-de-la-UPTC-abrio-sus-puertas-a-la-comunidad-universitaria/" },
   { name: "Restaurante", file: "restaurante.jpg", detail: "Restaurante estudiantil UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Servicio-de-restaurante-estudiantil-se-continuara-prestando-con-normalidad/" },
   { name: "Museo LN", file: "museo-ln.jpg", detail: "Museo de Historia Natural Luis Gonzalo Andrade", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/index.html" },
-  { name: "El Muro", file: "el-muro.jpg", detail: "Encuentro cultural en el Muro UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/eventos/det/Unete-al-parche-del-muro-2023.02.09/" },
+  { name: "El Muro", file: "estatua-sol.jpg", detail: "Estatua del Sol · referencia del campus UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Inaugurada-Sala-de-Exposiciones-del-Parque-Arqueologico-de-Tunja/" },
   { name: "Bienestar", file: "bienestar.jpg", detail: "Servicios de Bienestar Universitario", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
   { name: "Rafael Azula", file: "rafael-azula.jpg", detail: "Edificio Rafael Azula Barrera", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/comunicaciones/5_perio/secc/amb/art_03_s3_2022/index.html" },
 ];
@@ -98,7 +98,7 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
     <aside className="campus-aside" aria-label="Lugares del recorrido">
       <div className="campus-topline"><span className="live-dot"/> RUTA UPTC · TUNJA</div>
       <div className="campus-carousel" role="region" aria-roledescription="carrusel" aria-label="Estaciones del rally UPTC" tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") { event.preventDefault(); showStation(activeStation + 1); } if (event.key === "ArrowLeft") { event.preventDefault(); showStation(activeStation - 1); } }} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current == null) return; const swipe = event.changedTouches[0].clientX - touchStart.current; if (Math.abs(swipe) > 45) showStation(activeStation + (swipe < 0 ? 1 : -1)); touchStart.current = null; }}>
-        <figure className="campus-slide" key={station.file}>
+        <figure className={`campus-slide ${station.file === "estatua-sol.jpg" ? "sun-statue" : ""}`} key={station.file}>
           <img src={`/places/${station.file}`} alt={station.detail}/>
           <span className="campus-slide-count">{String(activeStation + 1).padStart(2, "0")} <i/> {String(STATION_PHOTOS.length).padStart(2, "0")}</span>
           <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p><a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a></figcaption>

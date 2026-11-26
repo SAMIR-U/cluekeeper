@@ -19,6 +19,18 @@ const origins = (env.CORS_ORIGINS ?? 'http://localhost:5173')
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
+// Hosts de servicios push de los navegadores (FCM/Chrome, Mozilla, Apple, Windows). Evita que un cliente
+// haga que el servidor envíe peticiones a URLs arbitrarias. Ampliable con PUSH_ALLOWED_HOSTS.
+const pushAllowedHosts = (
+  env.PUSH_ALLOWED_HOSTS ??
+  'googleapis.com,push.services.mozilla.com,push.apple.com,notify.windows.com,mozaws.net'
+)
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
+const appBaseUrl = (env.APP_BASE_URL ?? origins[0] ?? 'http://localhost:5173').replace(/\/$/, '');
+
 export const config = Object.freeze({
   isProd,
   port: num(env.PORT, 4000),
@@ -26,7 +38,7 @@ export const config = Object.freeze({
   // Orígenes del frontend (React) autorizados a llamar a la API con cookies
   corsOrigins: origins,
   // URL pública del frontend; se usa para construir el enlace del QR de acceso
-  appBaseUrl: (env.APP_BASE_URL ?? origins[0] ?? 'http://localhost:5173').replace(/\/$/, ''),
+  appBaseUrl,
   // Frontend y API en dominios distintos => SameSite=None + Secure
   cookieSameSite: env.COOKIE_SAMESITE ?? (isProd ? 'none' : 'lax'),
   cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : isProd,
@@ -47,4 +59,12 @@ export const config = Object.freeze({
   rateLimitEnabled: env.RATE_LIMIT !== 'off',
   adminEmail: env.ADMIN_EMAIL,
   adminPassword: env.ADMIN_PASSWORD,
+  // Web Push (VAPID). Genera el par con `npm run vapid`. La clave privada nunca debe salir del servidor.
+  vapidPublicKey: env.VAPID_PUBLIC_KEY?.trim() || undefined,
+  vapidPrivateKey: env.VAPID_PRIVATE_KEY?.trim() || undefined,
+  // mailto: o https:// de contacto para los servicios push (obligatorio en VAPID)
+  vapidSubject:
+    env.VAPID_SUBJECT?.trim() ||
+    (env.ADMIN_EMAIL ? `mailto:${env.ADMIN_EMAIL}` : appBaseUrl.startsWith('https://') ? appBaseUrl : 'mailto:admin@cluekeeper.test'),
+  pushAllowedHosts,
 });

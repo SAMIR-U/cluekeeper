@@ -8,6 +8,7 @@ import playRoutes from './routes/play.js';
 import evidenceRoutes from './routes/evidences.js';
 import eventRoutes from './routes/events.js';
 import adminRoutes from './routes/admin.js';
+import pushRoutes from './routes/push.js';
 
 export function createApp() {
   const app = express();
@@ -33,6 +34,7 @@ export function createApp() {
   app.use('/api/evidences', evidenceRoutes);
   app.use('/api/events', eventRoutes);
   app.use('/api/admin', adminRoutes);
+  app.use('/api/push', pushRoutes);
   app.use('/api', playRoutes);
 
   app.use(notFoundHandler);

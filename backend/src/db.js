@@ -120,6 +120,22 @@ CREATE TABLE IF NOT EXISTS warnings_sent (
   PRIMARY KEY (team_id, minutes)
 );
 
+-- Dispositivos suscritos a Web Push (un equipo puede tener varios teléfonos)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id         TEXT PRIMARY KEY,           -- sha256(endpoint)
+  team_id    TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  rally_id   TEXT NOT NULL REFERENCES rallies(id) ON DELETE CASCADE,
+  endpoint   TEXT NOT NULL,
+  p256dh     TEXT NOT NULL,
+  auth       TEXT NOT NULL,
+  user_agent TEXT,
+  created_at BIGINT NOT NULL,
+  last_ok_at BIGINT,
+  failures   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_team ON push_subscriptions(team_id);
+CREATE INDEX IF NOT EXISTS idx_push_rally ON push_subscriptions(rally_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_rally ON notifications(rally_id, id);
 CREATE INDEX IF NOT EXISTS idx_evidences_cp ON evidences(team_id, checkpoint_id);
 CREATE INDEX IF NOT EXISTS idx_teams_rally ON teams(rally_id);

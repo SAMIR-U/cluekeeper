@@ -40,7 +40,7 @@ Levanta la API junto a un PostgreSQL 16; los datos (incluidas las evidencias) vi
 | HU | Endpoint |
 |---|---|
 | 01 | `POST /auth/team/join` `{code, teamName}` → 404 `INVALID_RALLY_CODE` si no existe |
-| 02 | `GET /admin/rallies/:id/join-qr` (SVG) → app abre `/join?token=…` → `GET /auth/lookup?token=` y `POST /auth/team/join {joinToken, teamName}` |
+| 02 | `GET /admin/rallies/:id/join-qr` (SVG) → el front lee `/?code=…` (el enlace con token queda en `tokenUrl`) → `GET /auth/lookup?token=` y `POST /auth/team/join {joinToken, teamName}` |
 | 03, 16 | `GET /rally` (estado, `serverTime`, `endsAt`, `remainingSeconds`) |
 | 04, 05 | `GET /route/current` |
 | 06 | `POST /checkpoints/:id/proximity` |
@@ -50,7 +50,7 @@ Levanta la API junto a un PostgreSQL 16; los datos (incluidas las evidencias) vi
 | 12 | `submit {heading}` |
 | 14 | respuesta de `submit` (`correct`, `pointsAwarded`, `next`) |
 | 15, 17 | `GET /ranking`, `GET /rally` (`team.score`) |
-| 18, 19 | `GET /events` (SSE) y `GET /notifications?after=` |
+| 18, 19 | `GET /events` (SSE), `GET /notifications?after=` y Web Push (ver abajo) |
 | 20 | contenido cacheable en `route/current` / `challenge` |
 | 21, 22 | idempotencia en `evidences` y `submit`; estado local en Dexie |
 | 23 | `POST /auth/organizer/login`, `GET /admin/rallies/:id` |
@@ -78,13 +78,30 @@ POST /auth/team/join ─► GET /rally ─► (organizador inicia) ─► GET /r
 
 ## Pendiente para siguientes versiones
 
-Web Push con la PWA cerrada (las notificaciones ya se guardan y emiten; falta el despachador VAPID), revisión manual de evidencias, rutas escalonadas por equipo, exportación PDF, mover las evidencias a almacenamiento de objetos (S3/R2) si el volumen crece, y migraciones versionadas del esquema, y un antifraude de GPS más fuerte (la posición la reporta el cliente).
+revisión manual de evidencias, rutas escalonadas por equipo, exportación PDF, mover las evidencias a almacenamiento de objetos (S3/R2) si el volumen crece, y migraciones versionadas del esquema, y un antifraude de GPS más fuerte (la posición la reporta el cliente).
+
+## Notificaciones Web Push (VAPID)
+
+Avisan al equipo (nueva pista, rally iniciado, poco tiempo, tiempo extra, fin) **aunque la PWA esté cerrada**. Reutilizan las notificaciones que ya se guardan: cada `notify()` se envía además por push a los dispositivos suscritos (`services/push.js`).
+
+1. Genera el par de claves (una sola vez, en tu equipo): `npm run vapid`.
+2. En el servidor define `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` (`mailto:tu-correo` o la URL https del front). La privada es secreta: no va en git ni en el front. Si la cambias, hay que volver a suscribir los dispositivos.
+3. Sin esas variables el servidor arranca igual y el push queda desactivado (`GET /api/push/public-key` → `enabled:false`).
+
+| Endpoint | Uso |
+|---|---|
+| `GET /api/push/public-key` | `{enabled, publicKey}` (pública): es la `applicationServerKey` del front |
+| `POST /api/push/subscribe` | Equipo autenticado; cuerpo = `PushSubscription.toJSON()` (`{endpoint, keys:{p256dh, auth}}`) |
+| `DELETE /api/push/subscribe` | `{endpoint}`: da de baja ese dispositivo |
+| `POST /api/push/test` | Envía una notificación de prueba a los dispositivos del equipo |
+
+Detalles: máximo 5 dispositivos por equipo (se conservan los más recientes); las suscripciones que el servicio push responde 404/410 se borran solas; los avisos de tiempo caducan en 5 min (TTL) y se envían con urgencia alta; los endpoints se restringen a https y a servicios push de navegadores (`PUSH_ALLOWED_HOSTS`) para evitar SSRF. En iPhone/iPad solo funciona con la PWA **instalada en la pantalla de inicio** (iOS 16.4+).
 
 ## Despliegue en Render
 
 1. Crea un **PostgreSQL** en Render y copia su *Internal Database URL*.
 2. Crea un **Web Service** con *Root Directory* `backend`, *Build* `npm ci`, *Start* `npm start`, *Health Check* `/api/health`.
-3. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `APP_BASE_URL`, `TRUST_PROXY=1`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
+3. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `APP_BASE_URL`, `TRUST_PROXY=1`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` y, para push, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
    (o usa el `render.yaml` de la raíz del repositorio como Blueprint).
 
 Nota: el Postgres gratuito de Render **caduca a los 30 días**; para el evento usa un plan de pago o haz `pg_dump` antes.

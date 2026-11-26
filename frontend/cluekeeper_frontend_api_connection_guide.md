@@ -636,7 +636,7 @@ Upon reconnecting, the browser automatically sends `Last-Event-ID` and the serve
 
 Track the highest `id` received and poll every 10–15 seconds. Use this as a fallback when SSE is unavailable.
 
-> Web Push is not implemented yet: notifications are only delivered while the app is open.
+> Web Push (VAPID): see `backend/README.md` → "Notificaciones Web Push". Without the VAPID variables the server only delivers notifications while the app is open (SSE / `/notifications`).
 
 ---
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "API REST de ClueKeeper (rally de observaci\u00f3n) \u00b7 Express + PostgreSQL",
+  "description": "API REST de ClueKeeper (rally de observación) · Express + PostgreSQL",
   "engines": {
     "node": ">=22"
   },
@@ -11,7 +11,8 @@
     "start": "node src/server.js",
     "dev": "node --watch --env-file-if-exists=.env src/server.js",
     "seed": "node --env-file-if-exists=.env scripts/seed.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "vapid": "node scripts/vapid.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -23,6 +24,7 @@
     "multer": "^2.5.0",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
+    "web-push": "^3.6.7",
     "zod": "^4.6.7"
   },
   "devDependencies": {

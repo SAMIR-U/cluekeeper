@@ -141,8 +141,10 @@ router.post('/rallies/:id/finish', async (req, res) => {
 
 router.get('/rallies/:id/join-qr', async (req, res) => {
   const rally = await ownedRally(req);
-  const url = `${config.appBaseUrl}/join?token=${encodeURIComponent(signJoinToken(rally.id))}`;
-  if (req.query.format === 'json') return res.json({ url, code: rally.code });
+  // El frontend lee ?code=; el enlace con token (/join?token=) queda disponible en tokenUrl
+  const url = `${config.appBaseUrl}/?code=${encodeURIComponent(rally.code)}`;
+  const tokenUrl = `${config.appBaseUrl}/join?token=${encodeURIComponent(signJoinToken(rally.id))}`;
+  if (req.query.format === 'json') return res.json({ url, tokenUrl, code: rally.code });
   res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }));
 });
 

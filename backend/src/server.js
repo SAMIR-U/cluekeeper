@@ -4,10 +4,12 @@ import { createApp } from './app.js';
 import { bootstrapAdmin } from './services/bootstrap.js';
 import { seedPresetRallies } from './services/seedRally.js';
 import { startTicker } from './services/ticker.js';
+import { initPush } from './services/push.js';
 
 await bootstrapAdmin();
 await seedPresetRallies();
 const app = createApp();
+initPush();
 startTicker();
 
 const server = app.listen(config.port, () => {

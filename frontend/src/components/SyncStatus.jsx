@@ -7,6 +7,7 @@ import {
   recoverInterruptedSync,
   syncEvidences,
 } from "../services/evidenceSync";
+import { recoverInterruptedActions, syncPlayActions } from "../services/playSync";
 
 export default function SyncStatus() {
   const [online, setOnline] = useState(navigator.onLine);
@@ -18,6 +19,7 @@ export default function SyncStatus() {
     [],
     []
   );
+  const actions = useLiveQuery(() => db.playActions.toArray(), [], []);
 
   const counts = {
     PENDING: 0,
@@ -40,8 +42,9 @@ export default function SyncStatus() {
 
     try {
       const result = await syncEvidences();
+      const actions = await syncPlayActions();
       setMessage(
-        `Sincronización terminada. ${result.sent} enviadas.`
+        `Sincronización terminada. ${result.sent} evidencias y ${actions.sent} acciones enviadas.`
       );
     } catch (error) {
       setMessage(`Error: ${error.message}`);
@@ -64,7 +67,7 @@ export default function SyncStatus() {
 
     function onOnline() {
       if (refreshConnectionStatus() && isSyncConfigured()) {
-        syncEvidences().catch(console.error);
+        syncEvidences().then(syncPlayActions).catch(console.error);
       }
     }
 
@@ -75,11 +78,13 @@ export default function SyncStatus() {
     async function initialize() {
       try {
         await recoverInterruptedSync();
+        await recoverInterruptedActions();
 
         if (active &&
             refreshConnectionStatus() &&
             isSyncConfigured()) {
           await syncEvidences();
+          await syncPlayActions();
         }
       } catch (error) {
         console.error("Error de recuperación:", error);
@@ -89,14 +94,19 @@ export default function SyncStatus() {
     function onVisibilityChange() {
       if (document.visibilityState === "visible") {
         refreshConnectionStatus();
+        if (navigator.onLine && isSyncConfigured()) syncEvidences().then(syncPlayActions).catch(console.error);
       }
+    }
+
+    function onFocus() {
+      if (refreshConnectionStatus() && isSyncConfigured()) syncEvidences().then(syncPlayActions).catch(console.error);
     }
 
     initialize();
 
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    window.addEventListener("focus", refreshConnectionStatus);
+    window.addEventListener("focus", onFocus);
     document.addEventListener(
       "visibilitychange",
       onVisibilityChange
@@ -109,7 +119,7 @@ export default function SyncStatus() {
       window.removeEventListener("offline", onOffline);
       window.removeEventListener(
         "focus",
-        refreshConnectionStatus
+        onFocus
       );
       document.removeEventListener(
         "visibilitychange",
@@ -133,6 +143,7 @@ export default function SyncStatus() {
         <p>Enviadas: {counts.SENT}</p>
         <p>Con error: {counts.FAILED}</p>
       </div>
+      <p>Acciones de ruta pendientes: {actions.filter(item => item.status === "PENDING" || item.status === "SENDING").length} · con error: {actions.filter(item => item.status === "FAILED").length}</p>
 
       {!isSyncConfigured() && (
         <p role="status">

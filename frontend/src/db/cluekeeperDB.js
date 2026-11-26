@@ -5,7 +5,14 @@ export const db = new Dexie("ClueKeeperDB");
 
 db.version(2).stores({
   evidences: "id, checkpointId, type, status, createdAt",
-   rallyContent: "key, rallyId, teamId, checkpointId, kind, unlockedAt",
+  rallyContent: "key, rallyId, teamId, checkpointId, kind, unlockedAt",
+});
+
+db.version(3).stores({
+  evidences: "id, checkpointId, type, status, createdAt",
+  rallyContent: "key, rallyId, teamId, checkpointId, kind, unlockedAt",
+  rallyStates: "key, rallyId, teamId, updatedAt",
+  playActions: "id, rallyId, teamId, checkpointId, kind, status, createdAt",
 });
 
 export async function savePhotoEvidence(blob, checkpointId) {

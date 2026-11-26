@@ -1,9 +1,16 @@
+import process from "node:process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+const repository = process.env.GITHUB_REPOSITORY?.split("/")[1];
+const isUserPagesSite = repository?.endsWith(".github.io");
+const base = process.env.GITHUB_ACTIONS === "true" && repository && !isUserPagesSite
+  ? `/${repository}/`
+  : "/";
+
 export default defineConfig({
-  base: "/",
+  base,
 
   plugins: [
     react(),
@@ -16,20 +23,20 @@ export default defineConfig({
         short_name: "ClueKeeper",
         description: "Rally de observación interactivo",
         lang: "es",
-        start_url: "/",
-        scope: "/",
+        start_url: "./",
+        scope: base,
         display: "standalone",
         theme_color: "#047857",
         background_color: "#f3f8f4",
 
         icons: [
           {
-            src: "/pwa-192x192.png",
+            src: `${base}pwa-192x192.png`,
             sizes: "192x192",
             type: "image/png",
           },
           {
-            src: "/pwa-512x512.png",
+            src: `${base}pwa-512x512.png`,
             sizes: "512x512",
             type: "image/png",
           },
@@ -38,6 +45,7 @@ export default defineConfig({
 
       workbox: {
         cleanupOutdatedCaches: true,
+        importScripts: ["push-sw.js"],
 
         globPatterns: ["**/*.{js,css,html,ico,png,jpg,jpeg,webp,svg,woff2}"],
 

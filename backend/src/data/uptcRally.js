@@ -84,8 +84,7 @@ export const UPTC_RALLY = {
         'La siguiente huella está en un punto que la comunidad conoce como “El Muro”. Sigan la indicación de la organización hasta el muro o mural acordado.',
       latitude: 5.551862,
       longitude: -73.355614,
-      // El reto pide escanear el QR de la estación. Para permitir también GPS: ['GEOFENCE', 'QR']
-      validationMethods: ['QR'],
+      // GPS queda como alternativa al QR para Safari/iOS y para cuando falla el lector del navegador.
       challenge: {
         type: 'PHOTO',
         title: 'Una marca del campus',

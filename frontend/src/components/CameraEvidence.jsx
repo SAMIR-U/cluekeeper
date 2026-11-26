@@ -3,6 +3,36 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, savePhotoEvidence, deleteEvidence } from "../db/cluekeeperDB";
 import "./CameraEvidence.css";
 
+async function toJpeg(file) {
+  let source;
+  let objectUrl;
+  try {
+    if (typeof createImageBitmap === "function") {
+      try { source = await createImageBitmap(file); } catch { /* HEIC decoders may only be exposed through HTMLImageElement. */ }
+    }
+    if (!source) {
+      const image = new Image();
+      objectUrl = URL.createObjectURL(file);
+      image.src = objectUrl;
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+      source = image;
+    }
+    const scale = Math.min(1, 1600 / source.width, 1600 / source.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(source.width * scale));
+    canvas.height = Math.max(1, Math.round(source.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("No fue posible procesar la imagen.");
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error("El navegador no pudo convertir la imagen a JPEG.")), "image/jpeg", 0.86));
+    if (blob.size > 8 * 1024 * 1024) throw new Error("La imagen convertida supera el máximo de 8 MB.");
+    return blob;
+  } finally {
+    source?.close?.();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function SavedPhoto({ evidence }) {
   const [url] = useState(() => URL.createObjectURL(evidence.blob));
 
@@ -151,20 +181,24 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
     );
   }
 
-  function handleFile(event) {
+  async function handleFile(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
 
-    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
+    if (!(file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name)) || file.size > 20 * 1024 * 1024) {
       setError("Selecciona una imagen válida de máximo 8 MB.");
       return;
     }
 
     stopCamera();
     setError("");
-    setPhoto(file);
-    setPhotoVersion(version => version + 1);
+    try {
+      setPhoto(await toJpeg(file));
+      setPhotoVersion(version => version + 1);
+    } catch {
+      setError("No se pudo convertir esta imagen. Prueba guardarla como JPEG y vuelve a seleccionarla.");
+    }
   }
 
   async function savePhoto() {

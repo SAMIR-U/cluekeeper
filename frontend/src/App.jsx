@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity, ArrowLeft, ArrowRight, Award, BookOpen, Check, CheckCircle2, Clock3,
+  Activity, ArrowLeft, ArrowRight, Award, BookOpen, Camera, Check, CheckCircle2, Clock3,
   Cloud, Compass, Flag, LogOut, MapPin, Navigation, QrCode, Radio,
   RefreshCw, Rocket, ShieldCheck, Sparkles, Target, Trophy,
   Users, Wifi, X,
@@ -9,9 +9,13 @@ import { useLiveQuery } from "dexie-react-hooks";
 import CameraEvidence from "./components/CameraEvidence";
 import AudioEvidence from "./components/AudioEvidence";
 import SyncStatus from "./components/SyncStatus";
+import PushToggle from "./components/PushToggle";
 import { db } from "./db/cluekeeperDB";
 import { api, apiUrl, getToken, setToken } from "./services/api";
 import { syncEvidences } from "./services/evidenceSync";
+import { saveUnlockedContent } from "./services/offlineRally";
+import { queuePlayAction } from "./services/playSync";
+import { disablePush } from "./services/push";
 import { useGeolocation } from "./hooks/useGeolocation";
 import "./App.css";
 
@@ -25,6 +29,7 @@ const ADMIN_NAV = [
   { id: "overview", label: "Resumen", icon: Activity },
   { id: "teams", label: "Equipos", icon: Users },
   { id: "checkpoints", label: "Checkpoints", icon: MapPin },
+  { id: "evidences", label: "Evidencias", icon: Camera },
 ];
 const RallyMap = lazy(() => import("./components/RallyMap"));
 
@@ -34,7 +39,7 @@ const STATION_PHOTOS = [
   { name: "Goranchacha", file: "goranchacha.jpg", detail: "Auditorio Goranchacha · Edificio de Posgrados", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Nuevo-Auditorio-Goranchacha-de-la-UPTC-abrio-sus-puertas-a-la-comunidad-universitaria/" },
   { name: "Restaurante", file: "restaurante.jpg", detail: "Restaurante estudiantil UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Servicio-de-restaurante-estudiantil-se-continuara-prestando-con-normalidad/" },
   { name: "Museo LN", file: "museo-ln.jpg", detail: "Museo de Historia Natural Luis Gonzalo Andrade", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/index.html" },
-  { name: "El Muro", file: "estatua-sol.jpg", detail: "Estatua del Sol · referencia del campus UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Inaugurada-Sala-de-Exposiciones-del-Parque-Arqueologico-de-Tunja/" },
+  { name: "El Muro", file: null, detail: "Punto del muro acordado para el rally" },
   { name: "Bienestar", file: "bienestar.jpg", detail: "Servicios de Bienestar Universitario", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
   { name: "Rafael Azula", file: "rafael-azula.jpg", detail: "Edificio Rafael Azula Barrera", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/comunicaciones/5_perio/secc/amb/art_03_s3_2022/index.html" },
 ];
@@ -82,7 +87,7 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
   }
   return <div className="access-layout">
     <section className="access-main">
-      <h1>La ruta del<br/><em>guardián UPTC.</em></h1>
+      <h1>Rally UPTC:<br/><em>Conoce la U.</em></h1>
       <p className="lead">Recorre el campus, descifra sus señales y descubre una historia en cada parada.</p>
       <div className="event-summary"><span className="summary-icon"><Compass size={19}/></span><div><strong>Universidad Pedagógica y Tecnológica de Colombia</strong><span>Tunja · 8 estaciones · Rally de exploración</span></div></div>
       <form className="join-form" onSubmit={submit}>
@@ -98,33 +103,33 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
     <aside className="campus-aside" aria-label="Lugares del recorrido">
       <div className="campus-topline"><span className="live-dot"/> RUTA UPTC · TUNJA</div>
       <div className="campus-carousel" role="region" aria-roledescription="carrusel" aria-label="Estaciones del rally UPTC" tabIndex={0} onKeyDown={event => { if (event.key === "ArrowRight") { event.preventDefault(); showStation(activeStation + 1); } if (event.key === "ArrowLeft") { event.preventDefault(); showStation(activeStation - 1); } }} onTouchStart={event => { touchStart.current = event.changedTouches[0].clientX; }} onTouchEnd={event => { if (touchStart.current == null) return; const swipe = event.changedTouches[0].clientX - touchStart.current; if (Math.abs(swipe) > 45) showStation(activeStation + (swipe < 0 ? 1 : -1)); touchStart.current = null; }}>
-        <figure className={`campus-slide ${station.file === "estatua-sol.jpg" ? "sun-statue" : ""}`} key={station.file}>
-          <img src={`/places/${station.file}`} alt={station.detail}/>
+        <figure className="campus-slide" key={station.file || station.name}>
+          {station.file ? <img src={`/places/${station.file}`} alt={station.detail}/> : <div className="campus-no-photo" aria-label="Imagen del lugar pendiente"><MapPin size={36}/><span>Estación del campus</span></div>}
           <span className="campus-slide-count">{String(activeStation + 1).padStart(2, "0")} <i/> {String(STATION_PHOTOS.length).padStart(2, "0")}</span>
           <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p><a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a></figcaption>
           <button type="button" className="campus-carousel-arrow previous" onClick={() => showStation(activeStation - 1)} aria-label="Ver estación anterior"><ArrowLeft size={19}/></button>
           <button type="button" className="campus-carousel-arrow next" onClick={() => showStation(activeStation + 1)} aria-label="Ver estación siguiente"><ArrowRight size={19}/></button>
         </figure>
-        <div className="campus-carousel-controls"><span className="carousel-counter">{activeStation + 1} de {STATION_PHOTOS.length}</span><div className="carousel-dots" role="group" aria-label="Elegir estación">{STATION_PHOTOS.map((item, index) => <button key={item.file} type="button" className={index === activeStation ? "carousel-dot active" : "carousel-dot"} onClick={() => showStation(index)} aria-label={`Ver ${item.name}`} aria-current={index === activeStation ? "true" : undefined}/>)}</div><span className="carousel-hint">Desliza para explorar</span></div>
+      <div className="campus-carousel-controls"><span className="carousel-counter">{activeStation + 1} de {STATION_PHOTOS.length}</span><div className="carousel-dots" role="group" aria-label="Elegir estación">{STATION_PHOTOS.map((item, index) => <button key={item.file || item.name} type="button" className={index === activeStation ? "carousel-dot active" : "carousel-dot"} onClick={() => showStation(index)} aria-label={`Ver ${item.name}`} aria-current={index === activeStation ? "true" : undefined}/>)}</div><span className="carousel-hint">Desliza para explorar</span></div>
       </div>
       <p className="campus-carousel-footer">Ocho lugares del campus. Una misión compartida.</p>
     </aside>
   </div>;
 }
 
-function RoutePanel({ route, progress, onRefresh, loading, geo, onProximity, proximity, busy }) {
+function RoutePanel({ route, progress, rallyStatus, onRefresh, onRanking, loading, geo, onProximity, proximity, busy }) {
   const steps = progress?.checkpoints || [];
   const current = route?.checkpoint;
+  const timeUp = route?.state === "TIME_UP" || rallyStatus === "FINISHED";
   return <div className="workspace-grid">
     <section className="panel main-panel">
-      <div className="panel-heading"><div><span className="eyebrow">TU MISIÓN ACTUAL</span><h2>{current ? `Checkpoint ${current.position}` : route?.state === "ALL_COMPLETED" ? "Ruta completada" : "Esperando el inicio"}</h2></div><button type="button" className="icon-button" onClick={onRefresh} aria-label="Actualizar ruta" disabled={loading}><RefreshCw size={18} className={loading ? "spin" : ""}/></button></div>
+      <div className="panel-heading"><div><span className="eyebrow">TU MISIÓN ACTUAL</span><h2>{current ? `Checkpoint ${current.position}` : route?.state === "ALL_COMPLETED" ? "Ruta completada" : timeUp ? "Rally finalizado" : "Esperando el inicio"}</h2></div><button type="button" className="icon-button" onClick={onRefresh} aria-label="Actualizar ruta" disabled={loading}><RefreshCw size={18} className={loading ? "spin" : ""}/></button></div>
       {loading ? <Skeleton rows={3}/> : current ? <>
-        {STATION_PHOTOS[current.position - 1] && <figure className="station-photo"><img src={`/places/${STATION_PHOTOS[current.position - 1].file}`} alt={STATION_PHOTOS[current.position - 1].detail} loading="lazy"/><figcaption><MapPin size={14}/>{STATION_PHOTOS[current.position - 1].name}</figcaption></figure>}
         <div className="clue-banner"><span className="clue-mark"><BookOpen size={19}/></span><div><span className="eyebrow">PISTA DESBLOQUEADA</span><h3>{current.clue?.content?.title || `Pista ${current.position}`}</h3><p>{current.clue?.content?.text || "Acércate al siguiente lugar para descubrir la pista."}</p></div></div>
         <Suspense fallback={<div className="map-loading" role="status">Cargando mapa del campus…</div>}><RallyMap position={geo.position}/></Suspense>
         <div className="location-row"><div className="location-copy"><span className="location-icon"><MapPin size={18}/></span><div><strong>{geo.position ? "Ubicación obtenida" : "Valida tu proximidad"}</strong><span>{proximity?.reliable === false ? "Señal GPS poco precisa. Busca un espacio abierto o valida con el QR." : proximity ? proximity.inside ? "Estás dentro del perímetro del checkpoint." : Number.isFinite(proximity.remaining) ? `Aproximadamente ${Math.max(0, proximity.remaining)} m para llegar.` : "No se pudo calcular la distancia. Intenta de nuevo." : "El punto exacto se revela en el campus."}</span></div></div><button type="button" className="button button-dark" disabled={geo.loading || busy} onClick={onProximity}>{geo.loading || busy ? "Localizando…" : <><Navigation size={17}/> Verificar GPS</>}</button></div>
         {geo.error && <p className="form-error" role="alert">{geo.error}</p>}
-      </> : <div className="empty-state"><span className="empty-icon"><Clock3 size={25}/></span><h3>{route?.state === "ALL_COMPLETED" ? "¡Lo lograron!" : "El rally aún no comienza"}</h3><p>{route?.state === "ALL_COMPLETED" ? "Su equipo recorrió todos los puntos de la ruta." : "La pista aparecerá aquí cuando organización inicie el evento."}</p></div>}
+      </> : <div className="empty-state"><span className="empty-icon">{timeUp || route?.state === "ALL_COMPLETED" ? <Trophy size={25}/> : <Clock3 size={25}/>}</span><h3>{route?.state === "ALL_COMPLETED" ? "¡Lo lograron!" : timeUp ? "El tiempo del rally terminó" : "El rally aún no comienza"}</h3><p>{route?.state === "ALL_COMPLETED" ? "Su equipo recorrió todos los puntos de la ruta." : timeUp ? "Consulta la clasificación y el resultado final del equipo." : "La pista aparecerá aquí cuando organización inicie el evento."}</p>{(timeUp || route?.state === "ALL_COMPLETED") && <button type="button" className="button button-primary" onClick={onRanking}>Ver clasificación</button>}</div>}
     </section>
     <aside className="panel route-side"><div className="panel-heading"><div><span className="eyebrow">RECORRIDO</span><h2>Estaciones</h2></div><span className="count-pill">{progress?.completed || 0}/{progress?.total || 0}</span></div>
       <div className="station-list">{steps.map((step, index) => <div className={`station-row ${step.status.toLowerCase()}`} key={step.id}><span className="station-number">{step.status === "COMPLETED" ? <Check size={15}/> : String(index + 1).padStart(2, "0")}</span><div><strong>{step.status === "LOCKED" ? `Estación ${index + 1}` : step.title || `Checkpoint ${index + 1}`}</strong><span>{step.status === "COMPLETED" ? `Completado · +${step.pointsAwarded} pts` : step.status === "ARRIVED" ? "Llegada validada · reto disponible" : step.status === "CLUE" ? "Pista actual" : "Bloqueado"}</span></div><span className={`station-status ${step.status.toLowerCase()}`}>{step.status === "COMPLETED" ? "Listo" : step.status === "CLUE" || step.status === "ARRIVED" ? "Actual" : "Luego"}</span></div>)}</div>
@@ -161,7 +166,7 @@ function QrArrival({ onResult }) {
   function stop() { stream?.getTracks().forEach(track => track.stop()); setStream(null); setScanning(false); }
   async function start() {
     setError("");
-    if (!("BarcodeDetector" in window)) { setError("Este navegador no admite el lector QR. Solicita el código al organizador."); return; }
+    if (!("BarcodeDetector" in window)) { setError("El lector QR no está disponible en este navegador. Valida la estación con GPS."); return; }
     try { setStream(await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })); setScanning(true); }
     catch { setError("No fue posible abrir la cámara."); }
   }
@@ -173,6 +178,7 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
   const [answer, setAnswer] = useState("");
   const [heading, setHeading] = useState("");
   const [feedback, setFeedback] = useState("");
+  const submissionKey = useRef(null);
   const checkpoint = route?.checkpoint;
   const challenge = checkpoint?.challenge?.content;
   const checkpointId = checkpoint?.id;
@@ -182,7 +188,7 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
   const arrived = checkpoint?.status === "ARRIVED";
   const cpArrive = async body => {
     setFeedback("");
-    try { const response = await onArrive(checkpointId, body); setFeedback(response.arrived ? "Llegada validada. El reto está disponible." : response.message || `Aún fuera del perímetro · ${response.remaining ?? ""} m`); }
+    try { const response = await onArrive(checkpointId, body); setFeedback(response.pending ? "Llegada guardada en este dispositivo. Se validará al recuperar conexión." : response.arrived ? "Llegada validada. El reto está disponible." : response.message || `Aún fuera del perímetro · ${response.remaining ?? ""} m`); }
     catch (error) { setFeedback(error.message); }
   };
   const verifyQr = async code => { await cpArrive({ method: "QR", code, capturedAt: Date.now() }); };
@@ -190,21 +196,28 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
     event.preventDefault(); setFeedback("");
     try {
       if (!arrived) { setFeedback("Valida primero tu llegada a la estación."); return; }
+      submissionKey.current ||= crypto.randomUUID();
       let evidenceId;
       if (["PHOTO", "AUDIO"].includes(challenge?.type)) {
         if (!localEvidence) { setFeedback(challenge?.type === "PHOTO" ? "Guarda una foto para continuar." : "Guarda un audio para continuar."); return; }
         if (!currentEvidence) {
-          setFeedback("Sincronizando la evidencia con el servidor…");
-          await syncEvidences();
-          const refreshed = await db.evidences.where("checkpointId").equals(checkpointId).toArray();
-          evidenceId = [...refreshed].reverse().find(item => item.type === challenge.type && item.status === "SENT")?.id;
-          if (!evidenceId) { setFeedback("La evidencia sigue pendiente de sincronización. Revisa tu conexión y vuelve a intentar."); return; }
+          if (!navigator.onLine) evidenceId = localEvidence.id;
+          else {
+            setFeedback("Sincronizando la evidencia con el servidor…");
+            await syncEvidences();
+            const refreshed = await db.evidences.where("checkpointId").equals(checkpointId).toArray();
+            evidenceId = [...refreshed].reverse().find(item => item.type === challenge.type && item.status === "SENT")?.id;
+            if (!evidenceId) { setFeedback("La evidencia sigue pendiente de sincronización. Revisa tu conexión y vuelve a intentar."); return; }
+          }
         } else evidenceId = currentEvidence.id;
       }
-      const result = await onSubmit(checkpointId, { ...(challenge?.type === "QUESTION" ? { answer } : {}), ...(challenge?.type === "COMPASS" ? { heading: Number(heading) } : {}), ...(evidenceId ? { evidenceId } : {}), capturedAt: Date.now() });
-      if (result.correct || result.completed) { setFeedback(result.correct ? `¡Correcto! +${result.pointsAwarded} puntos.` : `Reto cerrado. Puntos otorgados: ${result.pointsAwarded}.`); notify("Progreso sincronizado con el rally."); }
+      const result = await onSubmit(checkpointId, { submissionId: submissionKey.current, ...(challenge?.type === "QUESTION" ? { answer } : {}), ...(challenge?.type === "COMPASS" ? { heading: Number(heading) } : {}), ...(evidenceId ? { evidenceId } : {}), capturedAt: Date.now() });
+      if (result.pending) { setFeedback("Reto guardado sin conexión. Se enviará cuando recuperes conexión."); return; }
+      submissionKey.current = null;
+      if (result.replayed) setFeedback("Este reto ya estaba registrado. Tu progreso se actualizó.");
+      else if (result.correct || result.completed) { setFeedback(result.correct ? `¡Correcto! +${result.pointsAwarded} puntos.` : `Reto cerrado. Puntos otorgados: ${result.pointsAwarded}.`); notify("Progreso sincronizado con el rally."); }
       else setFeedback(`Respuesta incorrecta. ${result.attemptsLeft} intentos restantes.`);
-    } catch (error) { setFeedback(error.message); }
+    } catch (error) { if (error.code === "ALREADY_COMPLETED") submissionKey.current = null; setFeedback(error.message); }
   }
   async function readCompass() {
     try {
@@ -218,13 +231,13 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
       setFeedback("Mueve el teléfono lentamente para capturar el rumbo.");
     } catch (error) { setFeedback(error.message || "No se detectó brújula; introduce el rumbo manualmente."); }
   }
-  if (!checkpoint) return <section className="panel empty-state"><span className="empty-icon"><Target size={25}/></span><h2>El siguiente reto aparecerá aquí</h2><p>Entra al rally y espera a que el equipo organizador lo inicie.</p></section>;
+  if (!checkpoint) return <section className="panel empty-state"><span className="empty-icon"><Target size={25}/></span><h2>{route?.state === "TIME_UP" ? "El tiempo terminó" : route?.state === "ALL_COMPLETED" ? "Ruta completada" : "El reto aparecerá aquí"}</h2><p>{route?.state === "TIME_UP" ? "El rally ya cerró. Revisa la clasificación para consultar el resultado." : route?.state === "ALL_COMPLETED" ? "Completaron todas las estaciones. Revisa la clasificación del equipo." : "Entra al rally y espera a que organización inicie el evento."}</p></section>;
   return <div className="challenge-layout">
     <section className="panel challenge-head"><div className="challenge-title-row"><div className="challenge-number">{String(checkpoint.position).padStart(2, "0")}</div><div><span className="eyebrow">RETO DE ESTACIÓN · {checkpoint.points} PTS</span><h2>{challenge?.title || `Checkpoint ${checkpoint.position}`}</h2></div><span className={`status-pill ${arrived ? "success" : "waiting"}`}>{arrived ? <><CheckCircle2 size={15}/> Llegada validada</> : <><Radio size={15}/> Por validar</>}</span></div><p className="challenge-instruction">{challenge?.instruction || "Primero valida tu llegada para ver el reto."}</p>{challenge?.description && <p className="challenge-description">{challenge.description}</p>}</section>
     <div className="challenge-columns">
-      <section className="panel arrival-panel"><div className="panel-heading"><div><span className="eyebrow">PASO 1</span><h3>Confirma tu llegada</h3></div><MapPin size={20}/></div><p>Valida tu presencia en la estación con GPS o escanea el QR del punto.</p><div className="arrival-actions"><button type="button" className="button button-dark" disabled={geo.loading || busy || arrived} onClick={async () => { const position = geo.position || await geo.getLocation(); if (!position) return; const result = await onProximity(checkpointId, position); if (result.reliable && result.inside) await cpArrive({ method: "GEOFENCE", ...position, capturedAt: Date.now() }); else setFeedback(result.reliable && Number.isFinite(result.remaining) ? `Aún estás fuera del perímetro · ${Math.max(0, result.remaining)} m` : "La señal GPS es poco precisa. Intenta en un espacio abierto o usa el QR."); }}><Navigation size={17}/>{arrived ? "Validado" : geo.loading ? "Localizando…" : "Validar con GPS"}</button></div><QrArrival checkpointId={checkpointId} onResult={verifyQr}/>{proximity?.reliable && !proximity.inside && Number.isFinite(proximity.remaining) && <p className="hint-text">Distancia aproximada: {Math.max(0, proximity.remaining)} m.</p>}{feedback && <p className="inline-feedback" role="status">{feedback}</p>}</section>
+      <section className="panel arrival-panel"><div className="panel-heading"><div><span className="eyebrow">PASO 1</span><h3>Confirma tu llegada</h3></div><MapPin size={20}/></div><p>Valida tu presencia en la estación con GPS o escanea el QR del punto.</p><div className="arrival-actions"><button type="button" className="button button-dark" disabled={geo.loading || busy || arrived} onClick={async () => { const position = geo.position || await geo.getLocation(); if (!position) return; const gpsArrival = { method: "GEOFENCE", ...position, capturedAt: Date.now() }; if (!navigator.onLine) { await cpArrive(gpsArrival); return; } try { const result = await onProximity(checkpointId, position); if (result.reliable && result.inside) await cpArrive(gpsArrival); else setFeedback(result.reliable && Number.isFinite(result.remaining) ? `Aún estás fuera del perímetro · ${Math.max(0, result.remaining)} m` : "La señal GPS es poco precisa. Intenta en un espacio abierto o usa el QR."); } catch (error) { if (!error.status || error.status >= 500) await cpArrive(gpsArrival); else setFeedback(error.message); } }}><Navigation size={17}/>{arrived ? "Validado" : geo.loading ? "Localizando…" : "Validar con GPS"}</button></div><QrArrival checkpointId={checkpointId} onResult={verifyQr}/>{proximity?.reliable && !proximity.inside && Number.isFinite(proximity.remaining) && <p className="hint-text">Distancia aproximada: {Math.max(0, proximity.remaining)} m.</p>}{feedback && <p className="inline-feedback" role="status">{feedback}</p>}</section>
       <section className="panel answer-panel"><div className="panel-heading"><div><span className="eyebrow">PASO 2 · {challenge?.type || "RETO"}</span><h3>{arrived ? "Completa la misión" : "Reto bloqueado"}</h3></div>{challenge?.type === "PHOTO" ? <Target size={20}/> : challenge?.type === "AUDIO" ? <Activity size={20}/> : challenge?.type === "COMPASS" ? <Compass size={20}/> : <BookOpen size={20}/>}</div>
-        {!arrived ? <div className="locked-prompt"><ShieldCheck size={22}/><span>La misión se abrirá al validar la llegada.</span></div> : <form onSubmit={submit}>
+        {!arrived ? <div className="locked-prompt"><ShieldCheck size={22}/><span>La misión se abrirá al validar la llegada.</span></div> : !challenge ? <div className="locked-prompt"><Cloud size={22}/><span>El reto se descargará cuando el dispositivo vuelva a conectarse.</span></div> : <form onSubmit={submit}>
           {challenge?.type === "QUESTION" && <label className="field-label" htmlFor="challenge-answer">Tu respuesta<input id="challenge-answer" name="answer" value={answer} onChange={event => setAnswer(event.target.value)} maxLength={500} required placeholder="Escribe lo que observaste"/></label>}
           {challenge?.type === "PHOTO" && <CameraEvidence checkpointId={checkpointId}/>}
           {challenge?.type === "AUDIO" && <AudioEvidence checkpointId={checkpointId}/>}
@@ -253,19 +266,20 @@ function OrganizerAccess({ onLogin, onBack }) {
   return <div className="access-layout admin-login-layout"><section className="access-main"><button type="button" className="text-button back-button" onClick={onBack}>← Volver al rally</button><div className="eyebrow">ÁREA DE ORGANIZACIÓN</div><h1>Coordina la<br/><em>aventura.</em></h1><p className="lead">Controla tiempos, equipos y resultados desde un solo panel.</p><form className="join-form" onSubmit={submit}><label htmlFor="admin-email">Correo organizador</label><input type="email" id="admin-email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="organizador@cluekeeper.test"/><label htmlFor="admin-password">Contraseña</label><input type="password" id="admin-password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary full" disabled={busy}>{busy ? "Ingresando…" : "Abrir panel de organización"}<ArrowRight size={17}/></button></form></section><aside className="campus-aside admin-aside"><span className="admin-aside-icon"><Activity size={28}/></span><h2>El campus está listo.</h2><p>Inicia el rally UPTC para habilitar las pistas a los equipos.</p></aside></div>;
 }
 
-function OrganizerPanel({ data, selected, onSelect, onRefresh, onControl, busy, onExport, onQr, tab, tick }) {
+function OrganizerPanel({ data, selected, onSelect, onRefresh, onControl, busy, onExport, onQr, onJoinQr, onEvidence, tab, tick, clockNow, clockOffset }) {
   const [extra, setExtra] = useState("10");
   const rallies = data?.rallies || [];
   const rally = selected;
   const teams = data?.teams || [];
   const checkpoints = data?.checkpoints || [];
   return <div className="admin-workspace">
-    <div className="admin-top-row"><div><span className="eyebrow">PANEL DE ORGANIZACIÓN</span><h2>{rally?.name || "Selecciona un rally"}</h2><p className="muted-text">{rally ? `${rally.code} · ${rally.status === "IN_PROGRESS" ? "En curso" : rally.status === "FINISHED" ? "Finalizado" : "Sin iniciar"}` : "Elige un evento para gestionar."}</p></div><div className="admin-actions"><select aria-label="Seleccionar rally" value={rally?.id || ""} onChange={e => onSelect(e.target.value)}>{rallies.map(item => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}</select><button type="button" className="icon-button" aria-label="Actualizar panel" onClick={onRefresh}><RefreshCw size={18}/></button></div></div>
+    <div className="admin-top-row"><div><span className="eyebrow">PANEL DE ORGANIZACIÓN</span><h2>{rally?.name || "Selecciona un rally"}</h2><p className="muted-text">{rally ? `${rally.code} · ${rally.status === "IN_PROGRESS" ? "En curso" : rally.status === "FINISHED" ? "Finalizado" : "Sin iniciar"}` : "Elige un evento para gestionar."}</p></div><div className="admin-actions"><select aria-label="Seleccionar rally" value={rally?.id || ""} onChange={e => onSelect(e.target.value)}>{rallies.map(item => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}</select>{rally && <button type="button" className="button button-soft" onClick={() => onJoinQr(rally.id)}>QR de acceso</button>}<button type="button" className="icon-button" aria-label="Actualizar panel" onClick={onRefresh}><RefreshCw size={18}/></button></div></div>
     {!rally ? <Skeleton rows={4}/> : <>
-      {tab === "overview" && <><div className="admin-metrics"><div className="panel metric-card"><Users size={19}/><strong>{rally.teamsCount ?? teams.length}</strong><span>equipos inscritos</span></div><div className="panel metric-card"><Target size={19}/><strong>{checkpoints.length}</strong><span>estaciones del rally</span></div><div className="panel metric-card"><Clock3 size={19}/><strong>{formatDuration(Math.max(0, (rally.remainingSeconds ?? 0) - tick))}</strong><span>tiempo restante</span></div></div>
+      {tab === "overview" && <><div className="admin-metrics"><div className="panel metric-card"><Users size={19}/><strong>{rally.teamsCount ?? teams.length}</strong><span>equipos inscritos</span></div><div className="panel metric-card"><Target size={19}/><strong>{checkpoints.length}</strong><span>estaciones del rally</span></div><div className="panel metric-card"><Clock3 size={19}/><strong>{formatDuration(Number.isFinite(rally.endsAt) ? Math.max(0, Math.floor((rally.endsAt - (clockNow + clockOffset)) / 1000)) : Math.max(0, (rally.remainingSeconds ?? 0) - tick))}</strong><span>tiempo restante</span></div></div>
       <div className="admin-grid"><section className="panel control-panel"><span className="eyebrow">CONTROL DEL EVENTO</span><h3>Estado del rally</h3><p>{rally.status === "IN_PROGRESS" ? "Los equipos pueden consultar sus pistas y registrar avances." : rally.status === "FINISHED" ? "El evento está cerrado. Puedes descargar el reporte final." : "Inicia el rally cuando las estaciones estén preparadas."}</p><div className="control-actions">{rally.status === "NOT_STARTED" && <button className="button button-primary" disabled={busy} onClick={() => onControl("start")}><Rocket size={17}/> Iniciar rally</button>}{rally.status === "IN_PROGRESS" && <><div className="extend-control"><label htmlFor="extend-minutes">Extender</label><input id="extend-minutes" type="number" min="1" max="240" value={extra} onChange={e => setExtra(e.target.value)}/><span>min</span><button type="button" className="button button-soft" disabled={busy} onClick={() => onControl("extend", Number(extra))}>Añadir tiempo</button></div><button className="button button-danger" disabled={busy} onClick={() => onControl("finish")}>Finalizar rally</button></>}</div></section><section className="panel report-panel"><span className="report-icon"><Award size={21}/></span><div><span className="eyebrow">CIERRE DEL EVENTO</span><h3>Reporte de resultados</h3><p>Descarga la clasificación oficial en formato CSV.</p></div><button className="button button-dark" onClick={onExport}>Exportar CSV</button></section></div></>}
       {tab === "teams" && <section className="panel admin-table"><div className="panel-heading"><div><span className="eyebrow">CLASIFICACIÓN</span><h3>Equipos registrados</h3></div><span className="count-pill">{teams.length} equipos</span></div>{teams.length ? <div className="admin-team-list">{teams.map(team => <div className="admin-team-row" key={team.teamId}><span className="rank-number">{String(team.rank).padStart(2, "0")}</span><strong>{team.name}</strong><span>{team.completedCheckpoints} / {checkpoints.length} estaciones</span><b>{team.score} pts</b></div>)}</div> : <p className="muted-text">Los equipos aparecerán cuando se inscriban al rally.</p>}</section>}
       {tab === "checkpoints" && <section className="panel admin-table checkpoint-table"><div className="panel-heading"><div><span className="eyebrow">RUTA CONFIGURADA</span><h3>Estaciones del rally</h3></div></div>{checkpoints.map(cp => <div className="checkpoint-row" key={cp.id}><span className="checkpoint-order">{String(cp.position).padStart(2, "0")}</span><div><strong>{cp.title}</strong><span>{cp.challenge?.type} · {cp.points} pts · {cp.radius} m</span></div><button type="button" className="text-link" onClick={() => onQr(cp.id, rally.id)}>Ver QR</button></div>)}</section>}
+      {tab === "evidences" && <section className="panel admin-table"><div className="panel-heading"><div><span className="eyebrow">ARCHIVO DEL RALLY</span><h3>Evidencias recibidas</h3></div><span className="count-pill">{data.evidences?.length || 0}</span></div>{data.evidences?.length ? <div className="admin-team-list">{data.evidences.map(item => <div className="checkpoint-row" key={item.id}><span className="checkpoint-order">{item.type === "PHOTO" ? <Camera size={16}/> : <Activity size={16}/>}</span><div><strong>{item.teamName} · Estación {item.checkpointPosition}</strong><span>{item.type === "PHOTO" ? "Fotografía" : "Audio"} · {new Date(item.receivedAt).toLocaleString("es-CO")}{item.late ? " · sincronizada tarde" : ""}</span></div><button type="button" className="text-link" onClick={() => onEvidence(rally.id, item.id)}>Abrir</button></div>)}</div> : <p className="muted-text">Las fotos y audios aparecerán cuando los equipos sincronicen sus evidencias.</p>}</section>}
     </>}
   </div>;
 }
@@ -283,34 +297,147 @@ export default function App() {
   const [progress, setProgress] = useState(null);
   const [ranking, setRanking] = useState(null);
   const [proximity, setProximity] = useState(null);
-  const [adminData, setAdminData] = useState({ rallies: [], teams: [], checkpoints: [] });
+  const [adminData, setAdminData] = useState({ rallies: [], teams: [], checkpoints: [], evidences: [] });
   const [adminRallyId, setAdminRallyId] = useState("");
   const [adminTab, setAdminTab] = useState("overview");
   const [tick, setTick] = useState(0);
+  const [clockNow, setClockNow] = useState(0);
+  const [clockOffset, setClockOffset] = useState(0);
+  const lastNotificationId = useRef(0);
+  const pollingRef = useRef(false);
   const geo = useGeolocation();
   const notify = useCallback(message => setToast(message), []);
 
-  const refreshPlayer = useCallback(async () => {
+  const refreshPlayer = useCallback(async ({ silent = false } = {}) => {
     if (session?.role !== "team") return;
-    setError(""); setLoading(true);
+    if (!silent) { setError(""); setLoading(true); }
     try {
       const [rallyResponse, progressResponse, rankingResponse] = await Promise.all([api("/rally"), api("/progress"), api("/ranking")]);
-      setRallyData(rallyResponse); setProgress(progressResponse); setRanking(rankingResponse); setTick(0); setProximity(null);
-      try { setRoute(await api("/route/current")); }
-      catch (routeError) { if (routeError.code === "RALLY_NOT_STARTED") setRoute({ state: "WAITING", checkpoint: null }); else throw routeError; }
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+      setRallyData(rallyResponse); setProgress(progressResponse); setRanking(rankingResponse); setTick(0); setClockNow(Date.now());
+      if (Number.isFinite(rallyResponse.rally?.serverTime)) setClockOffset(rallyResponse.rally.serverTime - Date.now());
+      setProximity(null);
+      let routeResponse;
+      try { routeResponse = await api("/route/current"); }
+      catch (routeError) { if (routeError.code === "RALLY_NOT_STARTED") routeResponse = { state: "WAITING", checkpoint: null }; else throw routeError; }
+      setRoute(routeResponse);
+      const rallyId = rallyResponse.rally?.id || session.rally?.id || localStorage.getItem("cluekeeper-rally-id");
+      const teamId = rallyResponse.team?.id || session.team?.id;
+      if (rallyId && teamId) {
+        const current = routeResponse.checkpoint;
+        if (current?.clue) await saveUnlockedContent({ rallyId, teamId, ...current.clue }).catch(() => {});
+        if (current?.challenge) await saveUnlockedContent({ rallyId, teamId, ...current.challenge }).catch(() => {});
+        await db.rallyStates.put({ key: `${rallyId}:${teamId}`, rallyId, teamId, rally: rallyResponse, progress: progressResponse, ranking: rankingResponse, route: routeResponse, updatedAt: Date.now() }).catch(() => {});
+      }
+    } catch (e) {
+      if (e.status === 401 && session.team?.id) {
+        const teamName = localStorage.getItem("cluekeeper-team-name");
+        const teamKey = localStorage.getItem("cluekeeper-team-key");
+        const code = localStorage.getItem("cluekeeper-team-code") || "UPTC26";
+        if (teamName && teamKey) {
+          try {
+            const resumed = await api("/auth/team/resume", { method: "POST", body: { code, teamName, teamKey } });
+            setToken(resumed.token);
+            localStorage.setItem("cluekeeper-player-session", JSON.stringify({ role: "team", team: resumed.team, rally: resumed.rally }));
+            window.location.reload();
+            return;
+          } catch { /* Keep the cached session visible if the server is still waking up. */ }
+        }
+      }
+      const recoverable = !e.status || e.status >= 500;
+      const rallyId = session.rally?.id || localStorage.getItem("cluekeeper-rally-id");
+      const teamId = session.team?.id;
+      const cached = recoverable && rallyId && teamId ? await db.rallyStates.get(`${rallyId}:${teamId}`).catch(() => null) : null;
+      if (cached) {
+        setRallyData(cached.rally); setProgress(cached.progress); setRanking(cached.ranking); setRoute(cached.route);
+        setClockNow(Date.now());
+        const serverTime = cached.rally?.rally?.serverTime;
+        if (Number.isFinite(serverTime)) setClockOffset(serverTime - cached.updatedAt);
+        setError("Sin conexión con el servidor. Mostramos el último estado guardado; los cambios se sincronizarán al reconectar.");
+      } else setError(e.message);
+    } finally { setLoading(false); }
   }, [session]);
 
   useEffect(() => {
     let active = true;
-    api("/auth/me").then(result => { if (active) { setSession(result); setPanel("route"); } })
-      .catch(() => { if (active) { setSession(null); setToken(null); } })
-      .finally(() => { if (active) setLoading(false); });
+    (async () => {
+      const saved = (() => { try { return JSON.parse(localStorage.getItem("cluekeeper-player-session") || "null"); } catch { return null; } })();
+      try {
+        const result = await api("/auth/me");
+        if (active) { setSession(result); setPanel("route"); if (result.role === "team") localStorage.setItem("cluekeeper-player-session", JSON.stringify(result)); }
+      } catch (error) {
+        if (!active) return;
+        if (error.status === 401) {
+          const teamName = localStorage.getItem("cluekeeper-team-name");
+          const teamKey = localStorage.getItem("cluekeeper-team-key");
+          const code = localStorage.getItem("cluekeeper-team-code") || "UPTC26";
+          if (teamName && teamKey) {
+            try {
+              const resumed = await api("/auth/team/resume", { method: "POST", body: { code, teamName, teamKey } });
+              setToken(resumed.token);
+              const sessionResult = { role: "team", team: resumed.team, rally: resumed.rally };
+              setSession(sessionResult); setPanel("route");
+              localStorage.setItem("cluekeeper-rally-id", resumed.rally.id);
+              localStorage.setItem("cluekeeper-player-session", JSON.stringify(sessionResult));
+              return;
+            } catch (resumeError) {
+              if (!resumeError.status || resumeError.status >= 500) {
+                if (saved?.role === "team") { setSession({ ...saved, offline: true }); setPanel("route"); setError("Conectando con el servidor… se conservaron tus datos en este dispositivo."); return; }
+              }
+            }
+          }
+          setToken(null);
+          if (saved?.role === "team") { setSession(saved); setPanel("route"); setError("Tu sesión venció. Conéctate para recuperarla y continuar."); }
+        } else if (saved?.role === "team") {
+          setSession({ ...saved, offline: true }); setPanel("route"); setError("Conectando con el servidor… se conservaron tus datos en este dispositivo.");
+        } else setError("No fue posible conectar con ClueKeeper. Intenta de nuevo cuando tengas conexión.");
+      } finally { if (active) setLoading(false); }
+    })();
     return () => { active = false; };
   }, []);
   useEffect(() => { const timer = window.setTimeout(refreshPlayer, 0); return () => window.clearTimeout(timer); }, [refreshPlayer]);
-  useEffect(() => { if (!session) return; const timer = window.setInterval(() => setTick(value => value + 1), 1000); return () => window.clearInterval(timer); }, [session]);
+  useEffect(() => { if (!session) return; const timer = window.setInterval(() => { setTick(value => value + 1); setClockNow(Date.now()); }, 1000); return () => window.clearInterval(timer); }, [session]);
+  useEffect(() => {
+    if (session?.role !== "team") return;
+    let active = true;
+    let initialized = false;
+    const poll = async () => {
+      if (!active || document.visibilityState !== "visible" || pollingRef.current) return;
+      pollingRef.current = true;
+      try {
+        const result = await api(`/notifications?after=${lastNotificationId.current}`);
+        const notes = result.notifications || [];
+        if (!initialized) {
+          if (notes.length) lastNotificationId.current = Math.max(...notes.map(note => Number(note.id) || 0));
+          initialized = true;
+        } else {
+          for (const note of notes) {
+            lastNotificationId.current = Math.max(lastNotificationId.current, Number(note.id) || 0);
+            if (note.type === "RALLY_STARTED") notify("¡El rally comenzó! Tu primera pista ya está lista.");
+            else if (note.type === "TIME_WARNING") notify(note.body || note.title);
+            else if (note.type === "TIME_EXTENDED") notify(note.body || "Se amplió el tiempo del rally.");
+            else if (note.type === "RALLY_FINISHED") notify(note.body || "El rally finalizó.");
+            else if (note.type === "NEW_CLUE") notify("Hay una nueva pista disponible.");
+            else if (note.type === "ROUTE_COMPLETED") notify("¡Ruta completada! Consulta el ranking.");
+          }
+        }
+        await refreshPlayer({ silent: true });
+      } catch { /* La próxima consulta reintenta cuando el servidor responda. */ }
+      finally { pollingRef.current = false; }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 12_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+  }, [session?.role, refreshPlayer, notify]);
+  useEffect(() => {
+    if (session?.role !== "team" || !("serviceWorker" in navigator)) return;
+    const refresh = event => { if (event.data?.source === "cluekeeper-push") void refreshPlayer({ silent: true }); };
+    const synced = () => void refreshPlayer({ silent: true });
+    navigator.serviceWorker.addEventListener("message", refresh);
+    window.addEventListener("cluekeeper:play-synced", synced);
+    return () => { navigator.serviceWorker.removeEventListener("message", refresh); window.removeEventListener("cluekeeper:play-synced", synced); };
+  }, [session?.role, refreshPlayer]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 3500); return () => window.clearTimeout(timer); }, [toast]);
 
   const join = async (teamName, code) => {
@@ -318,7 +445,11 @@ export default function App() {
     try {
       const result = await api("/auth/team/join", { method: "POST", body: { code, teamName } });
       setToken(result.token); localStorage.setItem("cluekeeper-team-name", result.team.name); localStorage.setItem("cluekeeper-team-key", result.teamKey || "");
-      setSession({ role: "team", team: result.team, rally: result.rally }); setPanel("route"); notify(`Equipo ${result.team.name} conectado al rally.`);
+      const nextSession = { role: "team", team: result.team, rally: result.rally };
+      localStorage.setItem("cluekeeper-team-code", code);
+      localStorage.setItem("cluekeeper-rally-id", result.rally.id);
+      localStorage.setItem("cluekeeper-player-session", JSON.stringify(nextSession));
+      setSession(nextSession); setPanel("route"); notify(`Equipo ${result.team.name} conectado al rally.`);
     } finally { setBusy(false); }
   };
   const organizerLogin = async (email, password) => {
@@ -330,16 +461,34 @@ export default function App() {
   const loadAdminRally = async (id, rallyList = adminData.rallies) => {
     if (!id) return;
     const details = await api(`/admin/rallies/${id}`);
-    setAdminRallyId(id); setAdminData({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], selected: details }); setTick(0);
+    const received = await api(`/admin/rallies/${id}/evidences`).catch(() => ({ evidences: [] }));
+    setAdminRallyId(id); setAdminData({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], selected: details }); setTick(0); setClockNow(Date.now());
+    if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
   };
   useEffect(() => {
     if (session?.role !== "organizer") return;
     let active = true;
-    (async () => { try { const list = await api("/admin/rallies"); if (!active) return; setAdminData(value => ({ ...value, rallies: list.rallies })); const preferred = list.rallies.find(item => item.id === adminRallyId) || list.rallies.find(item => item.code === "UPTC26") || list.rallies[0]; if (preferred) await loadAdminRally(preferred.id, list.rallies); } catch (e) { if (active) setError(e.message); } })();
-    return () => { active = false; };
-  // Load once per authenticated organizer session; selection refresh uses the explicit handler.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.role]);
+    const refresh = async () => {
+      try {
+        const list = await api("/admin/rallies");
+        if (!active) return;
+        const preferred = list.rallies.find(item => item.id === adminRallyId) || list.rallies.find(item => item.code === "UPTC26") || list.rallies[0];
+        if (!preferred) { setAdminData({ rallies: list.rallies, teams: [], checkpoints: [], evidences: [] }); return; }
+        const [details, received] = await Promise.all([
+          api(`/admin/rallies/${preferred.id}`),
+          api(`/admin/rallies/${preferred.id}/evidences`).catch(() => ({ evidences: [] })),
+        ]);
+        if (!active) return;
+        setAdminRallyId(preferred.id);
+        setAdminData({ rallies: list.rallies, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], selected: details });
+        setClockNow(Date.now());
+        if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
+      } catch (e) { if (active) setError(e.message); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void refresh(); }, 15_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [session?.role, adminRallyId]);
 
   const proximityRequest = async (checkpointId, position) => {
     const location = position || geo.position || await geo.getLocation();
@@ -348,16 +497,48 @@ export default function App() {
     setProximity(result); return result;
   };
   const arrive = async (checkpointId, body) => {
-    const result = await api(`/checkpoints/${checkpointId}/arrive`, { method: "POST", body });
-    if (result.arrived) { const challenge = await api(`/checkpoints/${checkpointId}/challenge`); setRoute(value => value ? { ...value, checkpoint: { ...value.checkpoint, status: "ARRIVED", challenge } } : value); await refreshPlayer(); }
-    return result;
+    const captured = { ...body, capturedAt: body.capturedAt || Date.now() };
+    try {
+      const result = await api(`/checkpoints/${checkpointId}/arrive`, { method: "POST", body: captured });
+      if (result.arrived) {
+        const challenge = result.challenge;
+        const rallyId = session?.rally?.id || localStorage.getItem("cluekeeper-rally-id");
+        if (challenge && rallyId && session?.team?.id) await saveUnlockedContent({ rallyId, teamId: session.team.id, ...challenge }).catch(() => {});
+        setRoute(value => value ? { ...value, checkpoint: { ...value.checkpoint, status: "ARRIVED", challenge } } : value);
+        await refreshPlayer({ silent: true });
+      }
+      return result;
+    } catch (error) {
+      if ((!error.status || error.status >= 500 || !navigator.onLine) && session?.rally?.id && session?.team?.id) {
+        await queuePlayAction({ rallyId: session.rally.id, teamId: session.team.id, checkpointId, kind: "ARRIVE", body: captured });
+        const cachedChallenge = await db.rallyContent.where("rallyId").equals(session.rally.id)
+          .filter(item => item.teamId === session.team.id && item.checkpointId === checkpointId && item.kind === "CHALLENGE")
+          .first().catch(() => null);
+        setRoute(value => value ? { ...value, checkpoint: { ...value.checkpoint, status: "ARRIVED", challenge: cachedChallenge || null } } : value);
+        return { arrived: true, pending: true, method: captured.method, arrivedAt: captured.capturedAt };
+      }
+      throw error;
+    }
   };
   const submit = async (checkpointId, body) => {
-    const result = await api(`/checkpoints/${checkpointId}/submit`, { method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body });
-    if (result.completed) { await refreshPlayer(); if (result.next) setPanel("route"); }
+    const idempotencyKey = body.submissionId || crypto.randomUUID();
+    try {
+    const result = await api(`/checkpoints/${checkpointId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: { ...body, submissionId: idempotencyKey } });
+    if (result.completed) { await refreshPlayer(); if (result.finished) setPanel("ranking"); else if (result.next) setPanel("route"); }
     return result;
+    } catch (e) {
+      if (e.code === "ALREADY_COMPLETED") { await refreshPlayer(); setPanel("route"); return { correct: false, completed: true, pointsAwarded: 0, replayed: true }; }
+      if (!navigator.onLine || !e.status || e.status >= 500) {
+        const rallyId = session?.rally?.id || localStorage.getItem("cluekeeper-rally-id");
+        if (rallyId && session?.team?.id) {
+          await queuePlayAction({ rallyId, teamId: session.team.id, checkpointId, kind: "SUBMIT", body: { ...body, capturedAt: body.capturedAt || Date.now() }, idempotencyKey });
+          return { correct: false, completed: false, pending: true, pointsAwarded: 0 };
+        }
+      }
+      throw e;
+    }
   };
-  const logout = async () => { try { await api("/auth/logout", { method: "POST" }); } catch { /* local session still clears */ } setToken(null); localStorage.removeItem("cluekeeper-team-name"); localStorage.removeItem("cluekeeper-team-key"); setSession(null); setPanel("route"); setRallyData(null); setRoute(null); setProgress(null); };
+  const logout = async () => { if (session?.role === "team") await disablePush().catch(() => {}); try { await api("/auth/logout", { method: "POST" }); } catch { /* local session still clears */ } setToken(null); for (const key of ["cluekeeper-team-name", "cluekeeper-team-key", "cluekeeper-team-code", "cluekeeper-rally-id", "cluekeeper-player-session"]) localStorage.removeItem(key); setSession(null); setPanel("route"); setRallyData(null); setRoute(null); setProgress(null); };
   const control = async (action, minutes) => {
     const id = adminData.selected?.id; if (!id) return;
     setBusy(true);
@@ -373,8 +554,17 @@ export default function App() {
     try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/checkpoints/${checkpointId}/qr`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo abrir el QR."); const svg = await response.text(); const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     catch (e) { setError(e.message); }
   };
+  const openJoinQr = async rallyId => {
+    try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/join-qr`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo abrir el QR de acceso."); const svg = await response.text(); const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60_000); }
+    catch (e) { setError(e.message); }
+  };
+  const openEvidence = async (rallyId, evidenceId) => {
+    try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/evidences/${evidenceId}/file`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo descargar la evidencia."); const blob = await response.blob(); const url = URL.createObjectURL(blob); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60_000); }
+    catch (e) { setError(e.message); }
+  };
   const selectedAdmin = adminData.selected || adminData.rallies.find(item => item.id === adminRallyId);
-  const remaining = rallyData?.rally?.remainingSeconds != null ? Math.max(0, rallyData.rally.remainingSeconds - tick) : 0;
+  const endsAt = rallyData?.rally?.endsAt;
+  const remaining = Number.isFinite(endsAt) ? Math.max(0, Math.floor((endsAt - (clockNow + clockOffset)) / 1000)) : rallyData?.rally?.remainingSeconds != null ? Math.max(0, rallyData.rally.remainingSeconds - tick) : 0;
 
   if (loading && !session) return <div className="app-shell"><main className="loading-shell"><div className="brand"><img className="brand-mark-image" src="/pwa-192x192.png" alt=""/><strong>ClueKeeper</strong></div><Skeleton rows={5}/></main></div>;
   return <div className="app-shell">
@@ -384,14 +574,15 @@ export default function App() {
       {!session && authMode && <OrganizerAccess onLogin={organizerLogin} onBack={() => setAuthMode(false)}/>}
       {session?.role === "team" && <><div className="page-heading"><div><span className="eyebrow">UNIVERSIDAD PEDAGÓGICA Y TECNOLÓGICA DE COLOMBIA</span><h1>{panel === "route" ? "Explora el campus" : panel === "challenge" ? "Reto activo" : panel === "progress" ? "Tu bitácora" : "Marcador"}</h1></div><div className="header-timer"><Clock3 size={18}/><div><small>TIEMPO RESTANTE</small><strong>{formatDuration(remaining)}</strong></div></div></div>
         <PageTabs items={PLAYER_NAV} value={panel} onChange={setPanel} label="Secciones del rally"/>
+        <PushToggle/>
         {error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setError(""); refreshPlayer(); }} aria-label="Reintentar"><RefreshCw size={16}/></button></div>}
-        {panel === "route" && <RoutePanel route={route} progress={progress} onRefresh={refreshPlayer} loading={loading} geo={geo} proximity={proximity} busy={busy} onProximity={async () => { try { const result = await proximityRequest(route?.checkpoint?.id); setProximity(result); } catch (e) { setError(e.message); } }}/>}
+        {panel === "route" && <RoutePanel route={route} progress={progress} rallyStatus={rallyData?.rally?.status} onRanking={() => setPanel("ranking")} onRefresh={refreshPlayer} loading={loading} geo={geo} proximity={proximity} busy={busy} onProximity={async () => { try { const result = await proximityRequest(route?.checkpoint?.id); setProximity(result); } catch (e) { setError(e.message); } }}/>}
         {panel === "challenge" && <ChallengePanel route={route} onArrive={arrive} onSubmit={submit} busy={busy} proximity={proximity} geo={geo} onProximity={proximityRequest} notify={notify}/>}
         {panel === "progress" && <ProgressPanel progress={progress} rally={rallyData} remaining={remaining}/>}
         {panel === "ranking" && <RankingPanel data={ranking} teamId={rallyData?.team?.id}/>}
         <div className="sync-strip"><span className="sync-cloud"><Cloud size={19}/></span><div><strong>Progreso protegido</strong><span>Las evidencias se guardan en este dispositivo y se sincronizan al recuperar conexión.</span></div><span className="offline-indicator"><Wifi size={15}/> {navigator.onLine ? "Conectado" : "Sin conexión"}</span></div><details className="sync-details"><summary>Estado de sincronización</summary><SyncStatus/></details>
       </>}
-      {session?.role === "organizer" && <><PageTabs items={ADMIN_NAV} value={adminTab} onChange={setAdminTab} label="Panel de organización"/>{error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Cerrar"><X size={16}/></button></div>}<OrganizerPanel data={adminData} selected={selectedAdmin} onSelect={id => loadAdminRally(id)} onRefresh={() => loadAdminRally(adminRallyId)} onControl={control} busy={busy} onExport={exportReport} onQr={openQr} tab={adminTab} tick={tick}/><div className="admin-logout"><button type="button" className="text-button" onClick={logout}>Cerrar sesión</button></div></>}
+      {session?.role === "organizer" && <><PageTabs items={ADMIN_NAV} value={adminTab} onChange={setAdminTab} label="Panel de organización"/>{error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Cerrar"><X size={16}/></button></div>}<OrganizerPanel data={adminData} selected={selectedAdmin} onSelect={id => loadAdminRally(id)} onRefresh={() => loadAdminRally(adminRallyId)} onControl={control} busy={busy} onExport={exportReport} onQr={openQr} onJoinQr={openJoinQr} onEvidence={openEvidence} tab={adminTab} tick={tick}/><div className="admin-logout"><button type="button" className="text-button" onClick={logout}>Cerrar sesión</button></div></>}
     </main>
     {toast && <div className="toast" role="status"><CheckCircle2 size={17}/>{toast}</div>}
   </div>;

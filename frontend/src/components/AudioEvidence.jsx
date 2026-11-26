@@ -38,6 +38,7 @@ export default function AudioEvidence({
   const chunksRef = useRef([]);
   const requestRef = useRef(0);
   const mountedRef = useRef(false);
+  const recordingStartedAt = useRef(0);
 
   const [recording, setRecording] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -149,9 +150,11 @@ export default function AudioEvidence({
         if (!mountedRef.current) return;
 
         const blob = new Blob(chunks, { type });
+        const durationMs = Date.now() - recordingStartedAt.current;
 
         if (blob.size > 0) {
-          setAudioBlob(blob);
+          if (durationMs >= 5000) setAudioBlob(blob);
+          else setError("La evidencia debe contener al menos 5 segundos de audio.");
         } else {
           setError("No se capturó ningún audio.");
         }
@@ -160,6 +163,7 @@ export default function AudioEvidence({
       };
 
       recorder.start();
+      recordingStartedAt.current = Date.now();
       setRecording(true);
     } catch (err) {
       releaseMicrophone();
@@ -224,7 +228,7 @@ export default function AudioEvidence({
 
       {recording && (
         <div role="status">
-          <p>🔴 Grabando audio...</p>
+          <p>🔴 Grabando audio… mantén la grabación al menos 5 segundos.</p>
 
           <button onClick={stopRecording}>
             Detener grabación

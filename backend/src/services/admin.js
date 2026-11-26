@@ -1,244 +1,166 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import QRCode from 'qrcode';
-import { one, all } from '../db.js';
-import { config } from '../config.js';
-import { notFound, parse } from '../lib/errors.js';
-import { signJoinToken } from '../lib/auth.js';
-import { checkpointCode } from '../lib/crypto.js';
-import { authenticate, ownedRally } from '../middleware/index.js';
-import { extendTime, finishRally, publicRally, startRally, loadRally } from '../services/rallies.js';
-import { ranking } from '../services/ranking.js';
-import { buildReport, reportToCsv } from '../services/report.js';
-import * as admin from '../services/admin.js';
+import { randomUUID } from 'node:crypto';
+import { one, all, run, tx } from '../db.js';
+import { conflict, notFound, unprocessable } from '../lib/errors.js';
+import { randomCode, randomSecret, checkpointCode } from '../lib/crypto.js';
 
-const router = Router();
-router.use(authenticate(['organizer']));
+// Servicio de administración: CRUD de rallies y checkpoints.
+// Lo usan routes/admin.js (panel del organizador) y services/seedRally.js (carga del Rally UPTC).
 
-/* ---------- Esquemas ---------- */
-
-const rallyInput = z.object({
-  name: z.string().trim().min(2).max(80),
-  code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{4,12}$/, 'Usa 4-12 letras o números').optional(),
-  durationMinutes: z.number().int().min(5).max(1440),
-  wrongAttemptPenalty: z.number().int().min(0).max(1000).default(0),
-  maxAttempts: z.number().int().min(1).max(10).default(3),
-  warningMinutes: z.array(z.number().int().min(1).max(240)).max(5).default([15, 5]),
-});
-
-const text = (max) => z.string().trim().min(1).max(max);
-const challengeBase = { title: text(100), description: z.string().trim().max(500).optional(), instruction: text(500) };
-
-const challengeSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('QUESTION'),
-    ...challengeBase,
-    options: z.array(text(100)).min(2).max(6).optional(),
-    acceptedAnswers: z.array(text(200)).min(1).max(10),
-  }),
-  z.object({ type: z.literal('PHOTO'), ...challengeBase }),
-  z.object({ type: z.literal('AUDIO'), ...challengeBase }),
-  z.object({
-    type: z.literal('COMPASS'),
-    ...challengeBase,
-    bearing: z.number().min(0).max(360),
-    tolerance: z.number().min(5).max(90).default(20),
-  }),
-]);
-
-const checkpointInput = z
-  .object({
-    title: text(100),
-    clueText: text(1000),
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    radius: z.number().min(5).max(1000).default(30),
-    validationMethods: z.array(z.enum(['GEOFENCE', 'QR', 'NFC'])).min(1).default(['GEOFENCE']),
-    nfcUid: z.string().trim().max(50).optional(),
-    hideLocation: z.boolean().default(true),
-    points: z.number().int().min(0).max(1000).default(100),
-    challenge: challengeSchema,
-  })
-  .refine((d) => !d.validationMethods.includes('NFC') || d.nfcUid, {
-    path: ['nfcUid'], message: 'nfcUid es obligatorio si se admite NFC',
-  });
+const jsonParse = (s) => JSON.parse(s);
 
 /* ---------- Rallies ---------- */
 
-router.post('/rallies', async (req, res) => {
-  const rally = await admin.createRally(req.organizer.id, parse(rallyInput, req.body));
-  res.status(201).json(await rallyAdminView(rally));
-});
-
-router.get('/rallies', async (req, res) => {
-  const rows = await all('SELECT id FROM rallies WHERE organizer_id=? ORDER BY created_at DESC', req.organizer.id);
-  const rallies = [];
-  for (const r of rows) rallies.push(await rallyAdminView(await loadRally(r.id)));
-  res.json({ rallies });
-});
-
-// HU-23: estado, tiempo y equipos registrados
-router.get('/rallies/:id', async (req, res) => {
-  const rally = await ownedRally(req);
-  res.json({
-    ...(await rallyAdminView(rally)),
-    teams: await ranking(rally),
-    checkpoints: (await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id)).map(admin.checkpointAdminView),
-  });
-});
-
-router.put('/rallies/:id', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  const d = parse(rallyInput, req.body);
-  await admin.updateRally(rally.id, d);
-  res.json(await rallyAdminView(await loadRally(rally.id)));
-});
-
-router.delete('/rallies/:id', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  await admin.deleteRally(rally.id);
-  res.status(204).end();
-});
-
-async function rallyAdminView(rally) {
-  const dummy = { extra_minutes: 0 };
-  return {
-    ...(await publicRally(rally, dummy)),
-    code: rally.code,
-    extraMinutes: rally.extra_minutes,
-    finishedAt: rally.finished_at,
-    finishReason: rally.finish_reason,
-    wrongAttemptPenalty: rally.wrong_attempt_penalty,
-    maxAttempts: rally.max_attempts,
-    warningMinutes: rally.warning_minutes.split(',').map(Number),
-    teamsCount: (await one('SELECT COUNT(*) AS n FROM teams WHERE rally_id=?', rally.id)).n,
-  };
+// Edición permitida solo antes de iniciar (la configuración queda bloqueada después)
+export function assertEditable(rally) {
+  if (rally.status !== 'NOT_STARTED') {
+    throw conflict('RALLY_LOCKED', 'El rally ya inició: su configuración no se puede modificar');
+  }
 }
 
-// HU-24
-router.post('/rallies/:id/start', async (req, res) => {
-  const rally = await startRally((await ownedRally(req)).id);
-  res.json(await rallyAdminView(rally));
-});
-
-// HU-25
-router.post('/rallies/:id/extend', async (req, res) => {
-  const { minutes, teamId } = parse(
-    z.object({ minutes: z.number().int().min(1).max(240), teamId: z.string().max(64).optional() }),
-    req.body,
+// Inserta sin lanzar excepción por código duplicado (dentro de una transacción de Postgres
+// un error de unicidad dejaría la transacción abortada)
+async function insertRally(organizerId, d, code) {
+  const id = randomUUID();
+  const r = await run(
+    `INSERT INTO rallies (id, organizer_id, name, code, duration_minutes, wrong_attempt_penalty, max_attempts, warning_minutes, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (code) DO NOTHING`,
+    id, organizerId, d.name, code, d.durationMinutes, d.wrongAttemptPenalty ?? 0, d.maxAttempts ?? 3,
+    (d.warningMinutes ?? [15, 5]).join(','), Date.now(),
   );
-  const rally = await extendTime((await ownedRally(req)).id, minutes, teamId ?? null);
-  res.json(await rallyAdminView(rally));
-});
+  return r.changes === 1 ? id : null;
+}
 
-router.post('/rallies/:id/finish', async (req, res) => {
-  res.json(await rallyAdminView(await finishRally((await ownedRally(req)).id)));
-});
+export async function createRally(organizerId, d) {
+  if (d.code) {
+    const id = await insertRally(organizerId, d, d.code.trim().toUpperCase());
+    if (!id) throw conflict('RALLY_CODE_TAKEN', 'Ya existe un rally con ese código');
+    return one('SELECT * FROM rallies WHERE id=?', id);
+  }
+  for (let i = 0; i < 10; i++) {
+    const id = await insertRally(organizerId, d, randomCode(6));
+    if (id) return one('SELECT * FROM rallies WHERE id=?', id);
+  }
+  throw conflict('RALLY_CODE_TAKEN', 'No se pudo generar un código único; inténtalo de nuevo');
+}
 
-/* ---------- QR de acceso (HU-02) ---------- */
+export async function updateRally(rallyId, d) {
+  return tx(async () => {
+    if (d.code) {
+      const code = d.code.trim().toUpperCase();
+      const clash = await one('SELECT id FROM rallies WHERE code=? AND id<>?', code, rallyId);
+      if (clash) throw conflict('RALLY_CODE_TAKEN', 'Ya existe un rally con ese código');
+      await run('UPDATE rallies SET code=? WHERE id=?', code, rallyId);
+    }
+    await run(
+      `UPDATE rallies SET name=?, duration_minutes=?, wrong_attempt_penalty=?, max_attempts=?, warning_minutes=? WHERE id=?`,
+      d.name, d.durationMinutes, d.wrongAttemptPenalty ?? 0, d.maxAttempts ?? 3, (d.warningMinutes ?? [15, 5]).join(','), rallyId,
+    );
+    return one('SELECT * FROM rallies WHERE id=?', rallyId);
+  });
+}
 
-router.get('/rallies/:id/join-qr', async (req, res) => {
-  const rally = await ownedRally(req);
-  // El frontend lee ?code=; el enlace con token (/join?token=) queda disponible en tokenUrl
-  const url = `${config.appBaseUrl}/?code=${encodeURIComponent(rally.code)}`;
-  const tokenUrl = `${config.appBaseUrl}/join?token=${encodeURIComponent(signJoinToken(rally.id))}`;
-  if (req.query.format === 'json') return res.json({ url, tokenUrl, code: rally.code });
-  res.type('image/svg+xml').send(await QRCode.toString(url, { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }));
-});
+export async function deleteRally(rallyId) {
+  await run('DELETE FROM rallies WHERE id=?', rallyId); // equipos, checkpoints y avisos caen en cascada
+}
 
 /* ---------- Checkpoints ---------- */
 
-router.get('/rallies/:id/checkpoints', async (req, res) => {
-  const rally = await ownedRally(req);
-  res.json({
-    checkpoints: (await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id)).map(admin.checkpointAdminView),
+// Separa lo que ve el participante (challenge_json) de las respuestas correctas (answer_json)
+function splitChallenge(challenge) {
+  // eslint-disable-next-line no-unused-vars
+  const { type, acceptedAnswers, bearing, tolerance, ...visible } = challenge;
+  let answer = {};
+  if (type === 'QUESTION') answer = { acceptedAnswers };
+  if (type === 'COMPASS') answer = { bearing, tolerance: tolerance ?? 20 };
+  return { type, visible, answer };
+}
+
+const cleanNfc = (uid) => String(uid).replace(/[^0-9a-f]/gi, '').toLowerCase();
+
+function checkpointColumns(d) {
+  const { type, visible, answer } = splitChallenge(d.challenge);
+  const methods = d.validationMethods ?? ['GEOFENCE'];
+  return [
+    d.title, d.clueText, d.latitude, d.longitude, d.radius ?? 30,
+    JSON.stringify(methods),
+    methods.includes('NFC') && d.nfcUid ? cleanNfc(d.nfcUid) : null,
+    (d.hideLocation ?? true) ? 1 : 0,
+    d.points ?? 100,
+    type, JSON.stringify(visible), JSON.stringify(answer),
+  ];
+}
+
+export function createCheckpoint(rallyId, d) {
+  return tx(async () => {
+    await one('SELECT id FROM rallies WHERE id=? FOR UPDATE', rallyId); // serializa altas simultáneas
+    const { next } = await one('SELECT COALESCE(MAX(position),0)+1 AS next FROM checkpoints WHERE rally_id=?', rallyId);
+    const id = randomUUID();
+    await run(
+      `INSERT INTO checkpoints
+         (id, rally_id, position, title, clue_text, latitude, longitude, radius, validation_methods, nfc_uid,
+          hide_location, points, challenge_type, challenge_json, answer_json, qr_secret)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id, rallyId, next, ...checkpointColumns(d), randomSecret(),
+    );
+    return one('SELECT * FROM checkpoints WHERE id=?', id);
   });
-});
+}
 
-router.post('/rallies/:id/checkpoints', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  const cp = await admin.createCheckpoint(rally.id, parse(checkpointInput, req.body));
-  res.status(201).json(admin.checkpointAdminView(cp));
-});
+export async function updateCheckpoint(rallyId, checkpointId, d) {
+  const existing = await one('SELECT id FROM checkpoints WHERE id=? AND rally_id=?', checkpointId, rallyId);
+  if (!existing) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
+  await run(
+    `UPDATE checkpoints SET title=?, clue_text=?, latitude=?, longitude=?, radius=?, validation_methods=?, nfc_uid=?,
+       hide_location=?, points=?, challenge_type=?, challenge_json=?, answer_json=?
+     WHERE id=? AND rally_id=?`,
+    ...checkpointColumns(d), checkpointId, rallyId,
+  );
+  return one('SELECT * FROM checkpoints WHERE id=?', checkpointId);
+}
 
-router.put('/rallies/:id/checkpoints/order', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  await admin.reorderCheckpoints(rally.id, parse(z.object({ ids: z.array(z.string()) }), req.body).ids);
-  res.status(204).end();
-});
-
-router.put('/rallies/:id/checkpoints/:cid', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  const cp = await admin.updateCheckpoint(rally.id, req.params.cid, parse(checkpointInput, req.body));
-  res.json(admin.checkpointAdminView(cp));
-});
-
-router.delete('/rallies/:id/checkpoints/:cid', async (req, res) => {
-  const rally = await ownedRally(req);
-  admin.assertEditable(rally);
-  await admin.deleteCheckpoint(rally.id, req.params.cid);
-  res.status(204).end();
-});
-
-// QR imprimible del checkpoint (HU-09)
-router.get('/rallies/:id/checkpoints/:cid/qr', async (req, res) => {
-  const rally = await ownedRally(req);
-  const cp = await one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', req.params.cid, rally.id);
-  if (!cp) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
-  res.type('image/svg+xml').send(await QRCode.toString(checkpointCode(cp), { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }));
-});
-
-/* ---------- Resultados (HU-26) ---------- */
-
-router.get('/rallies/:id/ranking', async (req, res) => {
-  res.json({ ranking: await ranking(await ownedRally(req)) });
-});
-
-router.get('/rallies/:id/report', async (req, res) => {
-  const rally = await ownedRally(req);
-  const report = await buildReport(rally);
-  const format = req.query.format ?? 'json';
-  if (format === 'csv') {
-    res.set('Content-Disposition', `attachment; filename="rally-${rally.code}-resultados.csv"`);
-    return res.type('text/csv; charset=utf-8').send(reportToCsv(report));
+// `position` es UNIQUE por rally: se pasa por valores negativos para no chocar a mitad de la operación
+async function renumber(rallyId, orderedIds) {
+  await run('UPDATE checkpoints SET position = -position WHERE rally_id=?', rallyId);
+  for (const [i, id] of orderedIds.entries()) {
+    await run('UPDATE checkpoints SET position=? WHERE id=? AND rally_id=?', i + 1, id, rallyId);
   }
-  res.json(report);
-});
+}
 
-/* ---------- Evidencias recibidas ---------- */
-
-router.get('/rallies/:id/evidences', async (req, res) => {
-  const rally = await ownedRally(req);
-  const rows = await all(
-    `SELECT e.id, e.type, e.mime, e.size, e.late, e.captured_at, e.received_at, e.checkpoint_id, c.position, t.id AS team_id, t.name AS team_name
-     FROM evidences e JOIN teams t ON t.id=e.team_id JOIN checkpoints c ON c.id=e.checkpoint_id
-     WHERE t.rally_id=? ORDER BY e.received_at`,
-    rally.id,
-  );
-  res.json({
-    evidences: rows.map((e) => ({
-      id: e.id, type: e.type, mime: e.mime, size: e.size, late: !!e.late,
-      capturedAt: e.captured_at, receivedAt: e.received_at,
-      checkpointId: e.checkpoint_id, checkpointPosition: e.position,
-      teamId: e.team_id, teamName: e.team_name,
-      fileUrl: `/api/admin/rallies/${rally.id}/evidences/${e.id}/file`,
-    })),
+export function deleteCheckpoint(rallyId, checkpointId) {
+  return tx(async () => {
+    const r = await run('DELETE FROM checkpoints WHERE id=? AND rally_id=?', checkpointId, rallyId);
+    if (r.changes === 0) throw notFound('CHECKPOINT_NOT_FOUND', 'Checkpoint no encontrado');
+    const rest = await all('SELECT id FROM checkpoints WHERE rally_id=? ORDER BY position', rallyId);
+    await renumber(rallyId, rest.map((c) => c.id));
   });
-});
+}
 
-router.get('/rallies/:id/evidences/:eid/file', async (req, res) => {
-  const rally = await ownedRally(req);
-  const ev = await one(
-    'SELECT e.mime, e.data FROM evidences e JOIN teams t ON t.id=e.team_id WHERE e.id=? AND t.rally_id=?',
-    req.params.eid, rally.id,
-  );
-  if (!ev) throw notFound('EVIDENCE_NOT_FOUND', 'Evidencia no encontrada');
-  res.type(ev.mime).send(Buffer.from(ev.data));
-});
+export function reorderCheckpoints(rallyId, ids) {
+  return tx(async () => {
+    const current = (await all('SELECT id FROM checkpoints WHERE rally_id=?', rallyId)).map((c) => c.id);
+    const valid = ids.length === current.length && new Set(ids).size === ids.length && ids.every((id) => current.includes(id));
+    if (!valid) {
+      throw unprocessable('INVALID_ORDER', 'La lista debe incluir exactamente todos los checkpoints del rally, sin repetir');
+    }
+    await renumber(rallyId, ids);
+  });
+}
 
-export default router;
+// Vista del organizador: incluye respuestas aceptadas y el contenido exacto del QR/NFC
+export function checkpointAdminView(cp) {
+  return {
+    id: cp.id,
+    position: cp.position,
+    title: cp.title,
+    clueText: cp.clue_text,
+    latitude: cp.latitude,
+    longitude: cp.longitude,
+    radius: cp.radius,
+    validationMethods: jsonParse(cp.validation_methods),
+    nfcUid: cp.nfc_uid,
+    hideLocation: !!cp.hide_location,
+    points: cp.points,
+    challenge: { type: cp.challenge_type, ...jsonParse(cp.challenge_json), ...jsonParse(cp.answer_json) },
+    qrPayload: checkpointCode(cp),
+  };
+}

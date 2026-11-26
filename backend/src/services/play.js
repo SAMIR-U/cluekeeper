@@ -7,8 +7,6 @@ import { verifyCheckpointCode, safeEqual } from '../lib/crypto.js';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../lib/errors.js';
 import { notify } from './notifications.js';
 
-const MAX_CLOCK_SKEW = 2 * MIN;
-
 /* ---------- Estado del equipo en la ruta ---------- */
 
 export async function teamState(rally, team) {
@@ -130,13 +128,12 @@ export function effectiveTime(rally, team, capturedAt) {
   let t = now;
 
   if (capturedAt != null) {
-    if (!Number.isFinite(capturedAt) || capturedAt > now + MAX_CLOCK_SKEW) {
+    if (!Number.isFinite(capturedAt)) {
       throw badRequest('INVALID_CAPTURED_AT', 'La fecha de captura no es válida');
     }
-    if (capturedAt < rally.started_at) {
-      throw badRequest('INVALID_CAPTURED_AT', 'La captura es anterior al inicio del rally');
-    }
-    t = Math.min(capturedAt, now);
+    // El reloj de un teléfono puede ir adelantado o atrasado: en vez de rechazar la acción,
+    // se ajusta al rango válido [inicio del rally, ahora]
+    t = Math.min(Math.max(capturedAt, rally.started_at), now);
   }
 
   const end = teamEnd(rally, team);

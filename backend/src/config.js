@@ -42,6 +42,8 @@ export const config = Object.freeze({
   lateSyncGraceMinutes: num(env.LATE_SYNC_GRACE_MINUTES, 120),
   teamSessionHours: num(env.TEAM_SESSION_HOURS, 36),
   organizerSessionHours: num(env.ORGANIZER_SESSION_HOURS, 12),
+  // Carga/sincroniza el Rally UPTC en la base de datos al arrancar
+  autoSeedRally: env.AUTO_SEED_RALLY !== 'false',
   rateLimitEnabled: env.RATE_LIMIT !== 'off',
   adminEmail: env.ADMIN_EMAIL,
   adminPassword: env.ADMIN_PASSWORD,

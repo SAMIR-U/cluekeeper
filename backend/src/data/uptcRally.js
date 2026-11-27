@@ -17,7 +17,7 @@ export const UPTC_RALLY = {
     {
       title: 'Plaza Camilo Torres Restrepo',
       clueText:
-        'El recorrido empieza en la plaza que lleva el nombre de un protagonista de la Independencia. Busquen su placa o señal institucional.',
+        'El recorrido empieza en la plaza donde una figura con nombre propio vigila el corazón del campus',
       latitude: 5.552039,
       longitude: -73.35655,
       challenge: {
@@ -29,7 +29,7 @@ export const UPTC_RALLY = {
     },
     {
       title: 'Biblioteca Central Jorge Palacios Preciado',
-      clueText: 'Sigan hacia el lugar donde el campus guarda y comparte sus historias: la biblioteca central.',
+      clueText: 'Sigan hacia el lugar donde el campus guarda y comparte sus historias. Y si vas a entrar ni comida ni bebida puedes llevar',
       latitude: 5.551555,
       longitude: -73.35663,
       challenge: {
@@ -42,14 +42,14 @@ export const UPTC_RALLY = {
     {
       title: 'Auditorio de Goranchacha',
       clueText:
-        'Muy cerca del saber se encuentra un espacio ligado a la memoria muisca. Busquen el Templo de Goranchacha y observen sus señales desde el sendero público.',
+        'Dirigansen al edificio donde estudian quienes ya se han graduado, y busca el salón de eventos cuyo nombre honra una raiz Muisca',
       latitude: 5.548435,
       longitude: -73.356131,
       challenge: {
         type: 'PHOTO',
         title: 'Una puerta al conocimiento',
         instruction:
-          'Fotografíen la señal o un detalle visible del templo desde el sendero. No ingresen ni pisen áreas arqueológicas.',
+          'Fotografíen la puerta de ingreso o si está abierto fotografíen el interior del auditorio',
       },
     },
     {
@@ -81,15 +81,14 @@ export const UPTC_RALLY = {
     {
       title: 'El Muro',
       clueText:
-        'La siguiente huella está en un punto que la comunidad conoce como “El Muro”. Sigan la indicación de la organización hasta el muro o mural acordado.',
+        'Encuentra el muro que no presume fama, pero guarda las voces de todos. Sube los escalones donde siempre hay conversación, aunque no haya escenario',
       latitude: 5.551862,
       longitude: -73.355614,
-      // GPS queda como alternativa al QR para Safari/iOS y para cuando falla el lector del navegador.
       challenge: {
         type: 'PHOTO',
         title: 'Una marca del campus',
         instruction:
-          'Escaneen el QR de la estación y tomen una fotografía de un detalle del muro o mural, sin personas identificables.',
+          'Tomen una fotografía de un detalle del muro, sin personas identificables.',
       },
     },
     {
@@ -108,7 +107,7 @@ export const UPTC_RALLY = {
     {
       title: 'Edificio Rafael Azula Barrera',
       clueText:
-        'La última parada lleva el nombre de un educador boyacense. Localicen el edificio Rafael Azula y su señal de entrada.',
+        'La última parada lleva el nombre de un educador boyacense. Localicen el edificio con una R y un monumento al frente.',
       latitude: 5.549775,
       longitude: -73.35688,
       challenge: {

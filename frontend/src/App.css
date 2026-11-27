@@ -89,13 +89,15 @@
 .review-notice svg { flex: none; }.review-notice.rejected { border-color: #f1d3c9; background: #fff4ef; color: #9b482f; }
 .evidence-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 10px 0; }
 .evidence-row>div:first-of-type, .submission-row>div { min-width: 0; }
-.evidence-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.checkpoint-row>.evidence-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 7px; }
+.evidence-actions .button { min-height: 36px; flex: 0 0 auto; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+.evidence-view { border-color: #d7e5da; background: #edf6ef; color: #185e44; }
 .review-button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
 .review-label { color: #718078; font-size: 12px; font-weight: 800; }
 .review-label.pending { color: #a05a15; }.review-label.approved { color: #08744f; }.review-label.rejected { color: #aa4430; }
 .submission-list-title { margin: 25px 0 7px; font: 700 17px var(--font-sans); color: var(--ink); }
 .submission-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 9px 0; }
-@media (max-width: 640px) { .brand-mark-fallback { width: 41px; height: 41px; border-radius: 13px; }.push-toggle { align-items: stretch; flex-direction: column; }.push-actions { display: grid; }.push-actions .button { width: 100%; }.evidence-row, .submission-row { grid-template-columns: 34px minmax(0, 1fr); }.evidence-actions, .submission-row>.review-label { grid-column: 2; justify-content: flex-start; }.evidence-actions { justify-content: flex-start; }.review-button { flex: 1; }.rally-status-chip { margin-top: 7px; } }
+@media (max-width: 640px) { .brand-mark-fallback { width: 41px; height: 41px; border-radius: 13px; }.push-toggle { align-items: stretch; flex-direction: column; }.push-actions { display: grid; }.push-actions .button { width: 100%; }.evidence-row, .submission-row { grid-template-columns: 34px minmax(0, 1fr); }.evidence-actions, .submission-row>.review-label { grid-column: 2; justify-content: flex-start; }.checkpoint-row>.evidence-actions { justify-content: flex-start; flex-wrap: nowrap; }.evidence-actions .button { min-height: 34px; gap: 5px; padding: 5px 8px; font-size: 11px; }.review-button { flex: 0 0 auto; }.rally-status-chip { margin-top: 7px; } }
 .campus-aside { display: flex; flex-direction: column; }
 .campus-carousel { display: grid; flex: 1; grid-template-rows: minmax(285px, 1fr) auto; gap: 13px; min-height: 0; margin: 20px -10px 0; outline: none; }
 .campus-slide { position: relative; min-height: 0; overflow: hidden; margin: 0; border: 1px solid #ffffff2b; border-radius: 22px; background: #123e33; isolation: isolate; }

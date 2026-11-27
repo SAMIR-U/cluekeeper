@@ -6,6 +6,11 @@ const num = (value, fallback) => {
   return value !== undefined && value !== '' && Number.isFinite(n) ? n : fallback;
 };
 
+const rallyDurationMinutes = num(env.RALLY_DURATION_MINUTES, 60);
+if (!Number.isInteger(rallyDurationMinutes) || rallyDurationMinutes < 5 || rallyDurationMinutes > 1440) {
+  throw new Error('RALLY_DURATION_MINUTES debe ser un entero entre 5 y 1440 minutos');
+}
+
 if (isProd && !env.DATABASE_URL) {
   throw new Error('DATABASE_URL (PostgreSQL) es obligatorio en producción');
 }
@@ -56,6 +61,8 @@ export const config = Object.freeze({
   organizerSessionHours: num(env.ORGANIZER_SESSION_HOURS, 12),
   // Carga/sincroniza el Rally UPTC en la base de datos al arrancar
   autoSeedRally: env.AUTO_SEED_RALLY !== 'false',
+  // Duración por defecto de cada nueva edición del rally UPTC.
+  rallyDurationMinutes,
   rateLimitEnabled: env.RATE_LIMIT !== 'off',
   adminEmail: env.ADMIN_EMAIL,
   adminPassword: env.ADMIN_PASSWORD,

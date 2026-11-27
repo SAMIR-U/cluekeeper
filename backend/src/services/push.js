@@ -109,13 +109,3 @@ async function sendToSubscribers(notification) {
     if (result.status === 'rejected') console.error('[push] no se pudo entregar una notificación:', result.reason?.statusCode ?? result.reason?.message ?? 'error');
   }
 }
-
-export async function sendTestNotification(team) {
-  const rows = await all('SELECT * FROM push_subscriptions WHERE team_id=?', team.id);
-  const payload = { id: `test-${Date.now()}`, type: 'TEST', title: 'Notificaciones activadas', body: 'ClueKeeper puede avisarte de las pistas y del tiempo.', data: {}, tag: 'cluekeeper-test', url: '/' };
-  const results = await Promise.allSettled(rows.map((row) => sendOne(row, payload, { TTL: 300, urgency: 'high', topic: 'cluekeeper-test' })));
-  for (const result of results) {
-    if (result.status === 'rejected') console.error('[push] falló la notificación de prueba:', result.reason?.statusCode ?? result.reason?.message ?? 'error');
-  }
-  return { sent: results.filter((item) => item.status === 'fulfilled' && item.value).length };
-}

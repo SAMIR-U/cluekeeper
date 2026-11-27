@@ -34,6 +34,8 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
+      - key: RALLY_DURATION_MINUTES
+        value: "60"         # cambia este valor para las nuevas ediciones del rally UPTC
       # Opcionales; si quedan vacías el backend arranca sin Web Push.
       - key: VAPID_PUBLIC_KEY
         sync: false

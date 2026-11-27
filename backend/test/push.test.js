@@ -160,13 +160,7 @@ test('endpoint caducado (410) se elimina; los demás siguen recibiendo', async (
   assert.equal(sent[0].endpoint, subOf('a').endpoint);
 });
 
-test('notificación de prueba y baja de la suscripción', async () => {
-  sent.length = 0;
-  const t = await call('POST', '/api/push/test', { token: state.a.token });
-  assert.equal(t.status, 200);
-  assert.equal(t.data.sent, 1);
-  assert.equal(sent[0].payload.type, 'TEST');
-
+test('baja de la suscripción', async () => {
   const del = await call('DELETE', '/api/push/subscribe', { token: state.a.token, body: { endpoint: subOf('a').endpoint } });
   assert.equal(del.status, 204);
   assert.equal((await one('SELECT COUNT(*) AS n FROM push_subscriptions')).n, 0);

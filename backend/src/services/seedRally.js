@@ -13,7 +13,7 @@ export async function ensurePresetRally(organizerId, def = UPTC_RALLY) {
     const fields = {
       name: def.name,
       code: def.code,
-      durationMinutes: def.durationMinutes,
+      durationMinutes: def.code === UPTC_RALLY.code ? config.rallyDurationMinutes : def.durationMinutes,
       wrongAttemptPenalty: def.wrongAttemptPenalty,
       maxAttempts: def.maxAttempts,
       warningMinutes: def.warningMinutes,
@@ -40,7 +40,7 @@ export async function ensurePresetRally(organizerId, def = UPTC_RALLY) {
 
     await run(
       `UPDATE rallies SET name=?, duration_minutes=?, wrong_attempt_penalty=?, max_attempts=?, warning_minutes=? WHERE id=?`,
-      def.name, def.durationMinutes, def.wrongAttemptPenalty, def.maxAttempts, def.warningMinutes.join(','), rally.id,
+      def.name, fields.durationMinutes, def.wrongAttemptPenalty, def.maxAttempts, def.warningMinutes.join(','), rally.id,
     );
     const existing = await all('SELECT id FROM checkpoints WHERE rally_id=? ORDER BY position', rally.id);
     for (const [i, cp] of def.checkpoints.entries()) {

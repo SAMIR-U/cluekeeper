@@ -64,7 +64,3 @@ export async function syncPushSubscription() {
   const { subscription } = await getRegistrationAndSubscription();
   if (subscription) await api('/push/subscribe', { method: 'POST', body: subscription.toJSON() });
 }
-
-export async function testPush() {
-  return api('/push/test', { method: 'POST', body: {} });
-}

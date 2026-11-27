@@ -85,7 +85,6 @@
 .push-hint { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #63786c; font-size: 12px; line-height: 1.4; }
 .push-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .push-toggle .button { min-height: 38px; padding: 7px 11px; font-size: 12px; }
-.push-success { margin: 0; color: #08744f; font-size: 13px; font-weight: 700; }
 .review-notice { display: flex; align-items: center; gap: 10px; margin: 0 0 13px; border: 1px solid #d9e8dc; border-radius: 12px; padding: 12px 14px; background: #eff8f1; color: #286348; font-size: 14px; font-weight: 700; line-height: 1.45; }
 .review-notice svg { flex: none; }.review-notice.rejected { border-color: #f1d3c9; background: #fff4ef; color: #9b482f; }
 .evidence-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 10px 0; }

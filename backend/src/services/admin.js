@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { config } from '../config.js';
 import { one, all, run, tx } from '../db.js';
 import { conflict, notFound, unprocessable } from '../lib/errors.js';
 import { randomCode, randomSecret, checkpointCode } from '../lib/crypto.js';
@@ -55,7 +56,7 @@ export function createNewEdition(rallyId) {
     const suffix = ' · Nueva edición';
     const definition = {
       name: `${source.name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`,
-      durationMinutes: source.duration_minutes,
+      durationMinutes: source.code === 'UPTC26' ? config.rallyDurationMinutes : source.duration_minutes,
       wrongAttemptPenalty: source.wrong_attempt_penalty,
       maxAttempts: source.max_attempts,
       warningMinutes: source.warning_minutes.split(',').map(Number),

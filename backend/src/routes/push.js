@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { AppError, parse } from '../lib/errors.js';
 import { authenticate, limiter } from '../middleware/index.js';
-import { isAllowedEndpoint, pushStatus, sendTestNotification, subscribeDevice, unsubscribeDevice } from '../services/push.js';
+import { isAllowedEndpoint, pushStatus, subscribeDevice, unsubscribeDevice } from '../services/push.js';
 
 const router = Router();
 const teamOnly = authenticate(['team']);
@@ -30,11 +30,6 @@ router.delete('/subscribe', teamOnly, limiter({ limit: 20, key: (req) => req.tea
   if (!isAllowedEndpoint(endpoint)) throw new AppError(400, 'INVALID_PUSH_ENDPOINT', 'El servicio push no está permitido');
   await unsubscribeDevice(req.team, endpoint);
   res.status(204).end();
-});
-
-router.post('/test', teamOnly, limiter({ limit: 5, key: (req) => req.team.id }), async (req, res) => {
-  if (!pushStatus().enabled) throw new AppError(503, 'PUSH_DISABLED', 'Las notificaciones no están configuradas en el servidor');
-  res.json(await sendTestNotification(req.team));
 });
 
 export default router;

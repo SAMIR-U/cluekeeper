@@ -9,7 +9,7 @@ const POINTS = 150; // 8 estaciones x 150 = 1.200 puntos
 export const UPTC_RALLY = {
   code: 'UPTC26',
   name: 'Rally UPTC: Conoce la U',
-  durationMinutes: 120,
+  durationMinutes: 60,
   wrongAttemptPenalty: 10, // puntos que se restan por cada intento fallido
   maxAttempts: 3, // tras 3 fallos el equipo avanza sin puntos
   warningMinutes: [15, 5],

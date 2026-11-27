@@ -93,7 +93,6 @@ Avisan al equipo (nueva pista, rally iniciado, poco tiempo, tiempo extra, fin) *
 | `GET /api/push/public-key` | `{enabled, publicKey}` (pública): es la `applicationServerKey` del front |
 | `POST /api/push/subscribe` | Equipo autenticado; cuerpo = `PushSubscription.toJSON()` (`{endpoint, keys:{p256dh, auth}}`) |
 | `DELETE /api/push/subscribe` | `{endpoint}`: da de baja ese dispositivo |
-| `POST /api/push/test` | Envía una notificación de prueba a los dispositivos del equipo |
 
 Detalles: máximo 5 dispositivos por equipo (se conservan los más recientes); las suscripciones que el servicio push responde 404/410 se borran solas; los avisos de tiempo caducan en 5 min (TTL) y se envían con urgencia alta; los endpoints se restringen a https y a servicios push de navegadores (`PUSH_ALLOWED_HOSTS`) para evitar SSRF. En iPhone/iPad solo funciona con la PWA **instalada en la pantalla de inicio** (iOS 16.4+).
 
@@ -101,7 +100,7 @@ Detalles: máximo 5 dispositivos por equipo (se conservan los más recientes); l
 
 1. Crea un **PostgreSQL** en Render y copia su *Internal Database URL*.
 2. Crea un **Web Service** con *Root Directory* `backend`, *Build* `npm ci`, *Start* `npm start`, *Health Check* `/api/health`.
-3. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `APP_BASE_URL`, `TRUST_PROXY=1`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` y, para push, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+3. Variables: `NODE_VERSION=24`, `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `APP_BASE_URL`, `TRUST_PROXY=1`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `RALLY_DURATION_MINUTES` (opcional; 60 por defecto) y, para push, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
    (o usa el `render.yaml` de la raíz del repositorio como Blueprint).
 
 Nota: el Postgres gratuito de Render **caduca a los 30 días**; para el evento usa un plan de pago o haz `pg_dump` antes.

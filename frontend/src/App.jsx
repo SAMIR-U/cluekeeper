@@ -35,11 +35,11 @@ const RallyMap = lazy(() => import("./components/RallyMap"));
 
 const STATION_PHOTOS = [
   { name: "Camilo Torres", file: "camilo-torres.jpg", detail: "Plaza Central Camilo Torres Restrepo", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Comunicado-001-a-la-opinion-publica" },
-  { name: "Biblioteca", file: "biblioteca.jpg", detail: "Biblioteca Central UPTC", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_aca/bibl/4_bpd/blbl_pres.html" },
+  { name: "Biblioteca", file: "biblioteca.png", detail: "Biblioteca Central UPTC" },
   { name: "Goranchacha", file: "goranchacha.jpg", detail: "Auditorio Goranchacha · Edificio de Posgrados", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Nuevo-Auditorio-Goranchacha-de-la-UPTC-abrio-sus-puertas-a-la-comunidad-universitaria/" },
   { name: "Restaurante", file: "restaurante.jpg", detail: "Restaurante estudiantil UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Servicio-de-restaurante-estudiantil-se-continuara-prestando-con-normalidad/" },
   { name: "Museo LN", file: "museo-ln.jpg", detail: "Museo de Historia Natural Luis Gonzalo Andrade", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/index.html" },
-  { name: "El Muro", file: null, detail: "Punto del muro acordado para el rally" },
+  { name: "El Muro", file: "muro.png", detail: "Mural de expresión universitaria en el campus UPTC" },
   { name: "Bienestar", file: "bienestar.jpg", detail: "Servicios de Bienestar Universitario", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
   { name: "Rafael Azula", file: "rafael-azula.jpg", detail: "Edificio Rafael Azula Barrera", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/comunicaciones/5_perio/secc/amb/art_03_s3_2022/index.html" },
 ];
@@ -106,7 +106,7 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
         <figure className="campus-slide" key={station.file || station.name}>
           {station.file ? <img src={`/places/${station.file}`} alt={station.detail}/> : <div className="campus-no-photo" aria-label="Imagen del lugar pendiente"><MapPin size={36}/><span>Estación del campus</span></div>}
           <span className="campus-slide-count">{String(activeStation + 1).padStart(2, "0")} <i/> {String(STATION_PHOTOS.length).padStart(2, "0")}</span>
-          <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p><a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a></figcaption>
+          <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p>{station.source && <a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a>}</figcaption>
           <button type="button" className="campus-carousel-arrow previous" onClick={() => showStation(activeStation - 1)} aria-label="Ver estación anterior"><ArrowLeft size={19}/></button>
           <button type="button" className="campus-carousel-arrow next" onClick={() => showStation(activeStation + 1)} aria-label="Ver estación siguiente"><ArrowRight size={19}/></button>
         </figure>

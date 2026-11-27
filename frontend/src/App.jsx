@@ -97,6 +97,8 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
   const [teamName, setTeamName] = useState("");
   const [code, setCode] = useState(initialCode);
   const [error, setError] = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanMessage, setScanMessage] = useState("");
   const [activeStation, setActiveStation] = useState(0);
   const touchStart = useRef(null);
   const station = STATION_PHOTOS[activeStation];
@@ -106,6 +108,21 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
     event.preventDefault(); setError("");
     try { await onJoin(teamName.trim(), code.trim().toUpperCase()); }
     catch (e) { setError(e.message); }
+  }
+  function handleRallyQr(rawValue) {
+    let scannedCode = String(rawValue || "").trim();
+    try { scannedCode = new URL(scannedCode, window.location.origin).searchParams.get("code") || scannedCode; }
+    catch { /* QR plano con el código directamente */ }
+    scannedCode = scannedCode.trim().toUpperCase();
+    if (!/^[A-Z0-9]{4,12}$/.test(scannedCode)) {
+      setError("Ese QR no parece ser un código de acceso de ClueKeeper. Escanea el QR del rally.");
+      setScannerOpen(false);
+      return;
+    }
+    setCode(scannedCode);
+    setError("");
+    setScanMessage("Código leído. Confirma el equipo y toca «Entrar al rally».");
+    setScannerOpen(false);
   }
   return <div className="access-layout">
     <section className="access-main">
@@ -117,6 +134,9 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
         <input id="team-name" name="teamName" autoComplete="organization" minLength={2} maxLength={40} required value={teamName} onChange={event => setTeamName(event.target.value)} placeholder="Ej. Guardianes del campus"/>
         <label htmlFor="rally-code">Código del rally</label>
         <input id="rally-code" name="rallyCode" required value={code} onChange={event => setCode(event.target.value)} placeholder="UPTC26" autoCapitalize="characters"/>
+        <button className="button button-soft full scan-rally-button" type="button" onClick={() => { setError(""); setScanMessage(""); setScannerOpen(value => !value); }}><QrCode size={18}/>{scannerOpen ? "Cerrar lector QR" : "Leer QR de acceso"}</button>
+        {scannerOpen && <RallyCodeScanner onScan={handleRallyQr} onClose={() => setScannerOpen(false)}/>}
+        {scanMessage && <p className="scan-success" role="status">{scanMessage}</p>}
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="button button-primary full" type="submit" disabled={busy}>{busy ? "Conectando…" : "Entrar al rally"}<ArrowRight size={18}/></button>
       </form>
@@ -136,6 +156,50 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
       </div>
       <p className="campus-carousel-footer">Ocho lugares del campus. Una misión compartida.</p>
     </aside>
+  </div>;
+}
+
+function RallyCodeScanner({ onScan, onClose }) {
+  const [stream, setStream] = useState(null);
+  const [error, setError] = useState("");
+  const videoRef = useRef(null);
+  const scanHandler = useRef(onScan);
+  useEffect(() => { scanHandler.current = onScan; }, [onScan]);
+  useEffect(() => {
+    let active = true;
+    let frame;
+    const video = videoRef.current;
+    if (stream && video && "BarcodeDetector" in window) {
+      video.srcObject = stream;
+      video.play().catch(() => setError("No se pudo iniciar la cámara."));
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const scan = async () => {
+        if (!active) return;
+        if (video.readyState >= 2) {
+          try {
+            const codes = await detector.detect(video);
+            if (codes[0]?.rawValue) { scanHandler.current(codes[0].rawValue); return; }
+          } catch { /* seguir intentando mientras la cámara enfoca */ }
+        }
+        frame = requestAnimationFrame(scan);
+      };
+      frame = requestAnimationFrame(scan);
+    }
+    return () => { active = false; cancelAnimationFrame(frame); };
+  }, [stream]);
+  useEffect(() => () => stream?.getTracks().forEach(track => track.stop()), [stream]);
+  async function startCamera() {
+    setError("");
+    if (!("BarcodeDetector" in window)) { setError("Este navegador no admite lectura QR desde la cámara. Abre ClueKeeper en Chrome o escribe el código manualmente."); return; }
+    if (!navigator.mediaDevices?.getUserMedia) { setError("No se pudo acceder a la cámara. Revisa los permisos del navegador."); return; }
+    try { setStream(await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false })); }
+    catch { setError("No se pudo abrir la cámara. Permite el acceso en el navegador e inténtalo otra vez."); }
+  }
+  function close() { stream?.getTracks().forEach(track => track.stop()); setStream(null); onClose(); }
+  return <div className="rally-code-scanner">
+    {stream ? <video ref={videoRef} className="qr-video" muted playsInline aria-label="Cámara leyendo el QR de acceso"/> : <p>Apunta la cámara al QR de acceso del rally.</p>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    <div className="rally-scanner-actions">{!stream && <button type="button" className="button button-dark" onClick={startCamera}><Camera size={17}/> Activar cámara</button>}<button type="button" className="button button-soft" onClick={close}><X size={17}/> Cancelar</button></div>
   </div>;
 }
 

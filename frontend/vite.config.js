@@ -9,10 +9,27 @@ const base = process.env.GITHUB_ACTIONS === "true" && repository && !isUserPages
   ? `/${repository}/`
   : "/";
 
+function developmentCspCompatibility() {
+  return {
+    name: "cluekeeper-development-csp",
+    transformIndexHtml(html, context) {
+      if (!context.server) return html;
+      // Vite injects a React-refresh inline preamble and HMR uses a WebSocket in development.
+      return html
+        .replace("script-src 'self';", "script-src 'self' 'unsafe-inline';")
+        .replace(
+          "connect-src 'self' https://cluekeeper.onrender.com;",
+          "connect-src 'self' https://cluekeeper.onrender.com http://localhost:4000 http://127.0.0.1:4000 ws://localhost:* ws://127.0.0.1:*;",
+        );
+    },
+  };
+}
+
 export default defineConfig({
   base,
 
   plugins: [
+    developmentCspCompatibility(),
     react(),
 
     VitePWA({

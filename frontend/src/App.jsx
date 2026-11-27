@@ -33,6 +33,17 @@ const ADMIN_NAV = [
 ];
 const RallyMap = lazy(() => import("./components/RallyMap"));
 
+function safeUptcUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && (url.hostname === "uptc.edu.co" || url.hostname.endsWith(".uptc.edu.co"))
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 const STATION_PHOTOS = [
   { name: "Camilo Torres", file: "camilo-torres.jpg", detail: "Plaza Central Camilo Torres Restrepo", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Comunicado-001-a-la-opinion-publica" },
   { name: "Biblioteca", file: "biblioteca-entrada.jpg", detail: "Biblioteca Central UPTC" },
@@ -89,6 +100,7 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
   const [activeStation, setActiveStation] = useState(0);
   const touchStart = useRef(null);
   const station = STATION_PHOTOS[activeStation];
+  const sourceUrl = safeUptcUrl(station.source);
   const showStation = index => setActiveStation((index + STATION_PHOTOS.length) % STATION_PHOTOS.length);
   async function submit(event) {
     event.preventDefault(); setError("");
@@ -116,7 +128,7 @@ function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
         <figure className="campus-slide" key={station.file || station.name}>
           {station.file ? <img src={`/places/${station.file}`} alt={station.detail} loading="lazy" decoding="async"/> : <div className="campus-no-photo" aria-label="Imagen del lugar pendiente"><MapPin size={36}/><span>Estación del campus</span></div>}
           <span className="campus-slide-count">{String(activeStation + 1).padStart(2, "0")} <i/> {String(STATION_PHOTOS.length).padStart(2, "0")}</span>
-          <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p>{station.source && <a href={station.source} target="_blank" rel="noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a>}</figcaption>
+          <figcaption><span className="campus-slide-kicker">ESTACIÓN {String(activeStation + 1).padStart(2, "0")}</span><h2>{station.name}</h2><p>{station.detail}</p>{sourceUrl && <a href={sourceUrl} target="_blank" rel="noopener noreferrer">Ver fuente de la imagen <ArrowRight size={14}/></a>}</figcaption>
           <button type="button" className="campus-carousel-arrow previous" onClick={() => showStation(activeStation - 1)} aria-label="Ver estación anterior"><ArrowLeft size={19}/></button>
           <button type="button" className="campus-carousel-arrow next" onClick={() => showStation(activeStation + 1)} aria-label="Ver estación siguiente"><ArrowRight size={19}/></button>
         </figure>

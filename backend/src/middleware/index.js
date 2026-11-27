@@ -9,6 +9,8 @@ export function securityHeaders(req, res, next) {
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
+    // La API devuelve datos/archivos, nunca HTML ejecutable. También protege el SVG de los QR.
+    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'",
     'Cache-Control': 'no-store',
   });
   next();

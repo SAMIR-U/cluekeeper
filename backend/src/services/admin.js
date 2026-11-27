@@ -56,7 +56,9 @@ export function createNewEdition(rallyId) {
     const suffix = ' · Nueva edición';
     const definition = {
       name: `${source.name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`,
-      durationMinutes: source.code === 'UPTC26' ? config.rallyDurationMinutes : source.duration_minutes,
+      // Cada edición nueva del rally adopta la duración configurada en el backend.
+      // La edición ya creada conserva su duración para no alterar una partida en curso.
+      durationMinutes: config.rallyDurationMinutes,
       wrongAttemptPenalty: source.wrong_attempt_penalty,
       maxAttempts: source.max_attempts,
       warningMinutes: source.warning_minutes.split(',').map(Number),

@@ -48,6 +48,22 @@ export async function receiveEvidence(rally, team, { evidenceId, checkpointId, t
       evidenceId, team.id, cp.id, type, detected.mime, file.buffer.length, file.buffer, late ? 1 : 0, t, receivedAt,
     );
     if (r.changes === 0) return (await replay(team, evidenceId)); // subida simultánea del mismo id
+    // Una foto recibida entra de inmediato a moderación, aunque el cliente se cierre
+    // antes de pulsar "Enviar reto". Así el organizador siempre puede verla y decidir.
+    if (type === 'PHOTO') {
+      const submissionId = `photo_${evidenceId}`;
+      const result = { submissionId, correct: false, completed: false, pendingReview: true, reviewKind: 'PHOTO', pointsAwarded: 0 };
+      await run(
+        `INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json)
+         VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
+        submissionId, team.id, cp.id, 0, late ? 1 : 0, t, receivedAt, JSON.stringify(result),
+      );
+      await run(
+        `INSERT INTO photo_reviews (evidence_id, team_id, checkpoint_id, submission_id, status, submitted_at)
+         VALUES (?,?,?,?,'PENDING',?) ON CONFLICT (evidence_id) DO NOTHING`,
+        evidenceId, team.id, cp.id, submissionId, receivedAt,
+      );
+    }
     return {
       status: 201,
       body: receipt({ id: evidenceId, checkpoint_id: cp.id, type, size: file.buffer.length, received_at: receivedAt }),

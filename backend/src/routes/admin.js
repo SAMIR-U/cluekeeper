@@ -11,6 +11,7 @@ import { extendTime, finishRally, publicRally, startRally, loadRally } from '../
 import { ranking } from '../services/ranking.js';
 import { buildReport, reportToCsv } from '../services/report.js';
 import { reviewPhoto } from '../services/photoReviews.js';
+import { reviewAnswer } from '../services/answerReviews.js';
 import * as admin from '../services/admin.js';
 
 const router = Router();
@@ -245,9 +246,11 @@ router.get('/rallies/:id/submissions', async (req, res) => {
   const rally = await ownedRally(req);
   const rows = await all(
     `SELECT s.id, s.answer_text, s.matched_answer, s.correct, s.captured_at, s.created_at,
+            ar.status AS review_status, ar.review_note,
             s.result_json, c.id AS checkpoint_id, c.position, c.title AS checkpoint_title,
             t.id AS team_id, t.name AS team_name
      FROM submissions s JOIN teams t ON t.id=s.team_id JOIN checkpoints c ON c.id=s.checkpoint_id
+     LEFT JOIN answer_reviews ar ON ar.submission_id=s.id
      WHERE t.rally_id=? AND s.answer_text IS NOT NULL ORDER BY s.created_at DESC`,
     rally.id,
   );
@@ -255,6 +258,7 @@ router.get('/rallies/:id/submissions', async (req, res) => {
     id: s.id, answerText: s.answer_text, matchedAnswer: s.matched_answer,
     correct: !!s.correct, capturedAt: s.captured_at, createdAt: s.created_at,
     pendingReview: Boolean(JSON.parse(s.result_json).pendingReview),
+    reviewStatus: s.review_status ?? null, reviewNote: s.review_note ?? '',
     checkpointId: s.checkpoint_id, checkpointPosition: s.position, checkpointTitle: s.checkpoint_title,
     teamId: s.team_id, teamName: s.team_name,
   })) });
@@ -264,6 +268,12 @@ router.post('/rallies/:id/evidences/:eid/review', async (req, res) => {
   const rally = await ownedRally(req);
   const { action, note } = parse(z.object({ action: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(300).optional() }), req.body);
   res.json(await reviewPhoto(rally.id, req.params.eid, action, note ?? ''));
+});
+
+router.post('/rallies/:id/submissions/:sid/review', async (req, res) => {
+  const rally = await ownedRally(req);
+  const { action, note } = parse(z.object({ action: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(300).optional() }), req.body);
+  res.json(await reviewAnswer(rally.id, req.params.sid, action, note ?? ''));
 });
 
 router.get('/rallies/:id/evidences/:eid/file', async (req, res) => {

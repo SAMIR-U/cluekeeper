@@ -97,7 +97,13 @@ export async function routeCurrent(rally, team) {
 export async function progressView(rally, team) {
   const state = await teamState(rally, team);
   const reviews = await all(
-    'SELECT checkpoint_id, status, submitted_at, reviewed_at, review_note FROM photo_reviews WHERE team_id=? ORDER BY submitted_at DESC',
+    `SELECT checkpoint_id, status, submitted_at, reviewed_at, review_note, 'PHOTO' AS review_type
+       FROM photo_reviews WHERE team_id=?
+     UNION ALL
+     SELECT checkpoint_id, status, submitted_at, reviewed_at, review_note, 'ANSWER' AS review_type
+       FROM answer_reviews WHERE team_id=?
+     ORDER BY submitted_at DESC`,
+    team.id,
     team.id,
   );
   const latestReview = new Map();
@@ -115,6 +121,7 @@ export async function progressView(rally, team) {
       pointsAwarded: p?.points_awarded ?? 0,
       attempts: p?.attempts ?? 0,
       reviewStatus: latestReview.get(cp.id)?.status ?? null,
+      reviewKind: latestReview.get(cp.id)?.review_type ?? null,
       reviewSubmittedAt: latestReview.get(cp.id)?.submitted_at ?? null,
       reviewNote: latestReview.get(cp.id)?.review_note ?? '',
       unlockedAt,
@@ -332,6 +339,14 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
 
     // Las fotos no desbloquean el siguiente punto hasta que organización las revise.
     if (cp.challenge_type === 'PHOTO') {
+      const pending = await one(
+        `SELECT evidence_id FROM photo_reviews
+         WHERE team_id=? AND checkpoint_id=? AND status='PENDING' ORDER BY submitted_at DESC LIMIT 1`,
+        team.id, cp.id,
+      );
+      if (pending) {
+        return { submissionId, correct: false, completed: false, pendingReview: true, reviewKind: 'PHOTO', replayed: true };
+      }
       const evidenceId = body.evidenceId;
       const existingReview = await one('SELECT status FROM photo_reviews WHERE evidence_id=?', evidenceId);
       if (existingReview?.status === 'APPROVED') throw conflict('ALREADY_COMPLETED', 'Esta foto ya fue aprobada');
@@ -351,6 +366,33 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
         `INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json, answer_text, matched_answer)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
         submissionId, team.id, cp.id, 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result), answerText, matchedAnswer,
+      );
+      return result;
+    }
+
+    // Las preguntas sin opciones son abiertas: queda solo una respuesta pendiente por equipo y estación.
+    if (cp.challenge_type === 'QUESTION' && !(jsonParse(cp.challenge_json).options?.length)) {
+      const pending = await one(
+        `SELECT submission_id FROM answer_reviews
+         WHERE team_id=? AND checkpoint_id=? AND status='PENDING' ORDER BY submitted_at DESC LIMIT 1`,
+        team.id, cp.id,
+      );
+      if (pending) {
+        return { submissionId: pending.submission_id, correct: false, completed: false, pendingReview: true, reviewKind: 'ANSWER', replayed: true };
+      }
+      const result = {
+        submissionId, correct: false, suggestedCorrect: correct, completed: false,
+        pendingReview: true, reviewKind: 'ANSWER', pointsAwarded: 0,
+      };
+      await run(
+        `INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json, answer_text, matched_answer)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        submissionId, team.id, cp.id, correct ? 1 : 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result), answerText, matchedAnswer,
+      );
+      await run(
+        `INSERT INTO answer_reviews (submission_id, team_id, checkpoint_id, status, submitted_at)
+         VALUES (?,?,?,'PENDING',?)`,
+        submissionId, team.id, cp.id, t,
       );
       return result;
     }

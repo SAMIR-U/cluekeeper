@@ -119,6 +119,32 @@ CREATE TABLE IF NOT EXISTS photo_reviews (
   review_note  TEXT NOT NULL DEFAULT ''
 );
 
+-- Recupera fotografías que llegaron antes de que se registrara la revisión.
+INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json)
+SELECT 'photo_' || e.id, e.team_id, e.checkpoint_id, 0, e.late, e.captured_at, e.received_at,
+       '{"submissionId":"photo_' || e.id || '","correct":false,"completed":false,"pendingReview":true,"reviewKind":"PHOTO","pointsAwarded":0}'
+FROM evidences e
+LEFT JOIN photo_reviews pr ON pr.evidence_id=e.id
+WHERE e.type='PHOTO' AND pr.evidence_id IS NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO photo_reviews (evidence_id, team_id, checkpoint_id, submission_id, status, submitted_at)
+SELECT e.id, e.team_id, e.checkpoint_id, 'photo_' || e.id, 'PENDING', e.received_at
+FROM evidences e
+LEFT JOIN photo_reviews pr ON pr.evidence_id=e.id
+WHERE e.type='PHOTO' AND pr.evidence_id IS NULL
+ON CONFLICT (evidence_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS answer_reviews (
+  submission_id TEXT PRIMARY KEY REFERENCES submissions(id) ON DELETE CASCADE,
+  team_id       TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  checkpoint_id TEXT NOT NULL REFERENCES checkpoints(id) ON DELETE CASCADE,
+  status        TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','REJECTED')),
+  submitted_at  BIGINT NOT NULL,
+  reviewed_at   BIGINT,
+  review_note   TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id         BIGSERIAL PRIMARY KEY,
   rally_id   TEXT NOT NULL REFERENCES rallies(id) ON DELETE CASCADE,
@@ -156,6 +182,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_rally ON notifications(rally_id, id
 CREATE INDEX IF NOT EXISTS idx_evidences_cp ON evidences(team_id, checkpoint_id);
 CREATE INDEX IF NOT EXISTS idx_teams_rally ON teams(rally_id);
 CREATE INDEX IF NOT EXISTS idx_photo_reviews_status ON photo_reviews(status, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_answer_reviews_status ON answer_reviews(status, submitted_at);
 `;
 
 /* ---------- Drivers ---------- */

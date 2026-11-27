@@ -11,7 +11,7 @@ import AudioEvidence from "./components/AudioEvidence";
 import SyncStatus from "./components/SyncStatus";
 import PushToggle from "./components/PushToggle";
 import { db } from "./db/cluekeeperDB";
-import { api, apiUrl, getToken, setToken } from "./services/api";
+import { api, apiUrl, connectionError, getToken, setToken } from "./services/api";
 import { syncEvidences } from "./services/evidenceSync";
 import { saveUnlockedContent } from "./services/offlineRally";
 import { queuePlayAction } from "./services/playSync";
@@ -513,10 +513,11 @@ export default function App() {
     if (!id) return;
     const details = await api(`/admin/rallies/${id}`);
     const [received, submissions] = await Promise.all([
-      api(`/admin/rallies/${id}/evidences`).catch(() => ({ evidences: [] })),
-      api(`/admin/rallies/${id}/submissions`).catch(() => ({ submissions: [] })),
+      api(`/admin/rallies/${id}/evidences`).catch(error => { setError(connectionError(error).message); return null; }),
+      api(`/admin/rallies/${id}/submissions`).catch(error => { setError(connectionError(error).message); return null; }),
     ]);
-    setAdminRallyId(id); setAdminData({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], submissions: submissions.submissions || [], selected: details }); setTick(0); setClockNow(Date.now());
+    if (received && submissions) setError("");
+    setAdminRallyId(id); setAdminData(current => ({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received?.evidences || (current.selected?.id === id ? current.evidences : []), submissions: submissions?.submissions || (current.selected?.id === id ? current.submissions : []), selected: details })); setTick(0); setClockNow(Date.now());
     if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
   };
   useEffect(() => {
@@ -530,12 +531,13 @@ export default function App() {
         if (!preferred) { setAdminData({ rallies: list.rallies, teams: [], checkpoints: [], evidences: [], submissions: [] }); return; }
         const [details, received, submissions] = await Promise.all([
           api(`/admin/rallies/${preferred.id}`),
-          api(`/admin/rallies/${preferred.id}/evidences`).catch(() => ({ evidences: [] })),
-          api(`/admin/rallies/${preferred.id}/submissions`).catch(() => ({ submissions: [] })),
+          api(`/admin/rallies/${preferred.id}/evidences`).catch(error => { if (active) setError(connectionError(error).message); return null; }),
+          api(`/admin/rallies/${preferred.id}/submissions`).catch(error => { if (active) setError(connectionError(error).message); return null; }),
         ]);
         if (!active) return;
+        if (received && submissions) setError("");
         setAdminRallyId(preferred.id);
-        setAdminData({ rallies: list.rallies, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], submissions: submissions.submissions || [], selected: details });
+        setAdminData(current => ({ rallies: list.rallies, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received?.evidences || (current.selected?.id === preferred.id ? current.evidences : []), submissions: submissions?.submissions || (current.selected?.id === preferred.id ? current.submissions : []), selected: details }));
         setClockNow(Date.now());
         if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
       } catch (e) { if (active) setError(e.message); }
@@ -645,15 +647,15 @@ export default function App() {
   };
   const openQr = async (checkpointId, rallyId) => {
     try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/checkpoints/${checkpointId}/qr`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo abrir el QR."); const svg = await response.text(); const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60000); }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(connectionError(e).message); }
   };
   const openJoinQr = async rallyId => {
     try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/join-qr`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo abrir el QR de acceso."); const svg = await response.text(); const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60_000); }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(connectionError(e).message); }
   };
   const openEvidence = async (rallyId, evidenceId) => {
     try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/evidences/${evidenceId}/file`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo descargar la evidencia."); const blob = await response.blob(); const url = URL.createObjectURL(blob); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60_000); }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(connectionError(e).message); }
   };
   const selectedAdmin = adminData.selected || adminData.rallies.find(item => item.id === adminRallyId);
   const endsAt = rallyData?.rally?.endsAt;

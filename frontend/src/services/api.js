@@ -16,17 +16,33 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+export function connectionError(error) {
+  const message = String(error?.message || "");
+  if (error instanceof TypeError || /failed to fetch|fetch failed|networkerror|load failed/i.test(message)) {
+    const friendly = new Error("Error de conexión. No se pudo comunicar con el servidor. Revisa tu conexión e inténtalo de nuevo.");
+    friendly.code = "NETWORK_ERROR";
+    friendly.cause = error;
+    return friendly;
+  }
+  return error;
+}
+
 export async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const response = await fetch(`${API_BASE}${path.startsWith("/") ? path : `/${path}`}`, {
-    ...options,
-    headers,
-    credentials: "include",
-    body: options.body && !(options.body instanceof FormData) ? JSON.stringify(options.body) : options.body,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path.startsWith("/") ? path : `/${path}`}`, {
+      ...options,
+      headers,
+      credentials: "include",
+      body: options.body && !(options.body instanceof FormData) ? JSON.stringify(options.body) : options.body,
+    });
+  } catch (error) {
+    throw connectionError(error);
+  }
   if (response.status === 204) return null;
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();

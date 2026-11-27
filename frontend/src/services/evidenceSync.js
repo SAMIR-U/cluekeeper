@@ -1,6 +1,6 @@
 
 import { db } from "../db/cluekeeperDB";
-import { API_BASE, apiUrl, getToken } from "./api";
+import { API_BASE, apiUrl, connectionError, getToken } from "./api";
 
 // Evita dos sincronizaciones simultáneas en la misma pestaña
 let activeSync = null;
@@ -34,7 +34,9 @@ async function uploadEvidence(evidence) {
   form.append("file", evidence.blob, filename);
 
   const token = getToken();
-  const response = await fetch(apiUrl("/evidences"), {
+  let response;
+  try {
+    response = await fetch(apiUrl("/evidences"), {
       method: "POST",
       credentials: "include",
       headers: {
@@ -42,7 +44,10 @@ async function uploadEvidence(evidence) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: form,
-  });
+    });
+  } catch (error) {
+    throw connectionError(error);
+  }
 
   if (!response.ok) {
     let message = `El servidor respondió HTTP ${response.status}`;

@@ -227,7 +227,6 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
   return (
     <section className="camera-evidence">
       <h2>HU-11 · Evidencia fotográfica</h2>
-      <p>Checkpoint de prueba: {checkpointId}</p>
 
       <div className="photo-actions">
         <button type="button" onClick={startCamera}><Camera size={17}/> Abrir cámara</button>

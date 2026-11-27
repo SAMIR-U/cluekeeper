@@ -43,6 +43,44 @@ export async function createRally(organizerId, d) {
   throw conflict('RALLY_CODE_TAKEN', 'No se pudo generar un código único; inténtalo de nuevo');
 }
 
+// Crea una edición limpia a partir de un rally finalizado y conserva intactos sus resultados.
+export function createNewEdition(rallyId) {
+  return tx(async () => {
+    const source = await one('SELECT * FROM rallies WHERE id=? FOR UPDATE', rallyId);
+    if (!source) throw notFound('RALLY_NOT_FOUND', 'Rally no encontrado');
+    if (source.status !== 'FINISHED') {
+      throw conflict('RALLY_NOT_FINISHED', 'Solo puedes crear una nueva edición cuando el rally haya finalizado');
+    }
+
+    const suffix = ' · Nueva edición';
+    const definition = {
+      name: `${source.name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`,
+      durationMinutes: source.duration_minutes,
+      wrongAttemptPenalty: source.wrong_attempt_penalty,
+      maxAttempts: source.max_attempts,
+      warningMinutes: source.warning_minutes.split(',').map(Number),
+    };
+    let newId = null;
+    for (let i = 0; i < 10 && !newId; i++) newId = await insertRally(source.organizer_id, definition, randomCode(6));
+    if (!newId) throw conflict('RALLY_CODE_TAKEN', 'No se pudo generar un código único; inténtalo de nuevo');
+
+    const checkpoints = await all('SELECT * FROM checkpoints WHERE rally_id=? ORDER BY position', rallyId);
+    for (const checkpoint of checkpoints) {
+      await run(
+        `INSERT INTO checkpoints
+          (id, rally_id, position, title, clue_text, latitude, longitude, radius, validation_methods, qr_secret,
+           nfc_uid, hide_location, points, challenge_type, challenge_json, answer_json)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        randomUUID(), newId, checkpoint.position, checkpoint.title, checkpoint.clue_text,
+        checkpoint.latitude, checkpoint.longitude, checkpoint.radius, checkpoint.validation_methods,
+        randomSecret(), checkpoint.nfc_uid, checkpoint.hide_location, checkpoint.points,
+        checkpoint.challenge_type, checkpoint.challenge_json, checkpoint.answer_json,
+      );
+    }
+    return one('SELECT * FROM rallies WHERE id=?', newId);
+  });
+}
+
 export async function updateRally(rallyId, d) {
   return tx(async () => {
     if (d.code) {

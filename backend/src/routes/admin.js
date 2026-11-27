@@ -123,6 +123,12 @@ router.post('/rallies/:id/start', async (req, res) => {
   res.json(await rallyAdminView(rally));
 });
 
+router.post('/rallies/:id/new-edition', async (req, res) => {
+  const source = await ownedRally(req);
+  const rally = await admin.createNewEdition(source.id);
+  res.status(201).json(await rallyAdminView(rally));
+});
+
 // HU-25
 router.post('/rallies/:id/extend', async (req, res) => {
   const { minutes, teamId } = parse(

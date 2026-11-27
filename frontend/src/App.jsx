@@ -51,7 +51,7 @@ const STATION_PHOTOS = [
   { name: "Restaurante", file: "restaurante.jpg", detail: "Restaurante estudiantil UPTC", source: "https://www.uptc.edu.co/sitio/portal/cal_not_eve/noticias/det/Servicio-de-restaurante-estudiantil-se-continuara-prestando-con-normalidad/" },
   { name: "Museo LN", file: "museo-ln.jpg", detail: "Museo de Historia Natural Luis Gonzalo Andrade", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/vic_inv_ext/ext_univ/unidades/redmuseos/histnat/index.html" },
   { name: "El Muro", file: "muro.jpg", detail: "Mural de expresión universitaria en el campus UPTC" },
-  { name: "Bienestar", file: "bienestar.jpg", detail: "Servicios de Bienestar Universitario", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
+  { name: "Bienestar", file: "bienestar.png", detail: "Logo de Bienestar Universitario UPTC", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/bie_uni/campus/tunja/" },
   { name: "Rafael Azula", file: "rafael-azula.jpg", detail: "Edificio Rafael Azula Barrera", source: "https://www.uptc.edu.co/sitio/portal/sitios/universidad/rectoria/comunicaciones/5_perio/secc/amb/art_03_s3_2022/index.html" },
 ];
 

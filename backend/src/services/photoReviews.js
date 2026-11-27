@@ -6,14 +6,21 @@ import { teamState } from './play.js';
 
 export function reviewPhoto(rallyId, evidenceId, action, note = '') {
   return tx(async () => {
-    const evidence = await one(
+    let evidence = await one(
       `SELECT e.*, t.rally_id FROM evidences e JOIN teams t ON t.id=e.team_id
-       WHERE e.id=? AND t.rally_id=? FOR UPDATE`,
+       WHERE e.id=? AND t.rally_id=?`,
       evidenceId, rallyId,
     );
     if (!evidence) throw notFound('EVIDENCE_NOT_FOUND', 'Evidencia no encontrada');
     if (evidence.type !== 'PHOTO') throw unprocessable('PHOTO_ONLY', 'Solo las fotografías requieren aprobación');
 
+    // Usa el mismo orden de bloqueo que la recepción de evidencias (equipo y luego revisión).
+    await one('SELECT id FROM teams WHERE id=? AND rally_id=? FOR UPDATE', evidence.team_id, rallyId);
+    evidence = await one(
+      `SELECT e.*, t.rally_id FROM evidences e JOIN teams t ON t.id=e.team_id
+       WHERE e.id=? AND t.rally_id=? FOR UPDATE`,
+      evidenceId, rallyId,
+    );
     const review = await one('SELECT * FROM photo_reviews WHERE evidence_id=? FOR UPDATE', evidenceId);
     if (!review) throw conflict('PHOTO_REVIEW_NOT_FOUND', 'Esta fotografía no está pendiente de revisión');
     if (review.status !== 'PENDING') throw conflict('REVIEW_ALREADY_RESOLVED', 'Esta fotografía ya fue revisada');
@@ -32,8 +39,10 @@ export function reviewPhoto(rallyId, evidenceId, action, note = '') {
     const checkpoint = await one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', evidence.checkpoint_id, rallyId);
     const team = await one('SELECT * FROM teams WHERE id=? AND rally_id=? FOR UPDATE', evidence.team_id, rallyId);
     const progress = await one('SELECT * FROM progress WHERE team_id=? AND checkpoint_id=? FOR UPDATE', team.id, checkpoint.id);
-    if (!progress || progress.status === 'COMPLETED') {
-      throw conflict('CHECKPOINT_ALREADY_COMPLETED', 'El equipo ya completó esta estación');
+    if (!progress) throw conflict('CHECKPOINT_NOT_ACTIVE', 'El equipo todavía no tiene esta estación activa');
+    if (progress.status === 'COMPLETED') {
+      await run("UPDATE photo_reviews SET status='APPROVED', reviewed_at=?, review_note=? WHERE evidence_id=?", reviewedAt, note, evidenceId);
+      return { evidenceId, status: 'APPROVED', reviewedAt, pointsAwarded: 0, score: team.score, alreadyCompleted: true };
     }
 
     const pointsAwarded = Math.max(0, checkpoint.points);

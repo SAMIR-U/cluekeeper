@@ -372,14 +372,11 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
 
     // Las preguntas sin opciones son abiertas: queda solo una respuesta pendiente por equipo y estación.
     if (cp.challenge_type === 'QUESTION' && !(jsonParse(cp.challenge_json).options?.length)) {
-      const pending = await one(
-        `SELECT submission_id FROM answer_reviews
-         WHERE team_id=? AND checkpoint_id=? AND status='PENDING' ORDER BY submitted_at DESC LIMIT 1`,
-        team.id, cp.id,
+      await run(
+        `UPDATE answer_reviews SET status='SUPERSEDED', reviewed_at=?, review_note='Reemplazada por una respuesta más reciente'
+         WHERE team_id=? AND checkpoint_id=? AND status='PENDING'`,
+        Date.now(), team.id, cp.id,
       );
-      if (pending) {
-        return { submissionId: pending.submission_id, correct: false, completed: false, pendingReview: true, reviewKind: 'ANSWER', replayed: true };
-      }
       const result = {
         submissionId, correct: false, suggestedCorrect: correct, completed: false,
         pendingReview: true, reviewKind: 'ANSWER', pointsAwarded: 0,

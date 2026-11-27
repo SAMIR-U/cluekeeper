@@ -40,7 +40,12 @@ export async function receiveEvidence(rally, team, { evidenceId, checkpointId, t
   }
 
   return tx(async () => {
+    await one('SELECT id FROM teams WHERE id=? FOR UPDATE', team.id);
     const { t, late, cp } = await assertEvidenceAllowed(rally, team, checkpointId, capturedAt);
+    const previousProgress = await one('SELECT status FROM progress WHERE team_id=? AND checkpoint_id=?', team.id, cp.id);
+    if (previousProgress?.status === 'COMPLETED') {
+      throw conflict('ALREADY_COMPLETED', 'El equipo ya completó esta estación');
+    }
     const receivedAt = Date.now();
     const r = await run(
       `INSERT INTO evidences (id, team_id, checkpoint_id, type, mime, size, data, late, captured_at, received_at)
@@ -53,6 +58,11 @@ export async function receiveEvidence(rally, team, { evidenceId, checkpointId, t
     if (type === 'PHOTO') {
       const submissionId = `photo_${evidenceId}`;
       const result = { submissionId, correct: false, completed: false, pendingReview: true, reviewKind: 'PHOTO', pointsAwarded: 0 };
+      await run(
+        `UPDATE photo_reviews SET status='SUPERSEDED', reviewed_at=?, review_note='Reemplazada por una evidencia más reciente'
+         WHERE team_id=? AND checkpoint_id=? AND status='PENDING'`,
+        receivedAt, team.id, cp.id,
+      );
       await run(
         `INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json)
          VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,

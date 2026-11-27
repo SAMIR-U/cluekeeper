@@ -94,7 +94,7 @@
 .evidence-view { border-color: #d7e5da; background: #edf6ef; color: #185e44; }
 .review-button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
 .review-label { color: #718078; font-size: 12px; font-weight: 800; }
-.review-label.pending { color: #a05a15; }.review-label.approved { color: #08744f; }.review-label.rejected { color: #aa4430; }
+.review-label.pending { color: #a05a15; }.review-label.approved { color: #08744f; }.review-label.rejected { color: #aa4430; }.review-label.superseded { color: #718078; }
 .submission-list-title { margin: 25px 0 7px; font: 700 17px var(--font-sans); color: var(--ink); }
 .submission-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 9px 0; }
 @media (max-width: 640px) { .brand-mark-fallback { width: 41px; height: 41px; border-radius: 13px; }.push-toggle { align-items: stretch; flex-direction: column; }.push-actions { display: grid; }.push-actions .button { width: 100%; }.evidence-row, .submission-row { grid-template-columns: 34px minmax(0, 1fr); }.evidence-actions, .submission-row>.review-label { grid-column: 2; justify-content: flex-start; }.checkpoint-row>.evidence-actions { justify-content: flex-start; flex-wrap: nowrap; }.evidence-actions .button { min-height: 34px; gap: 5px; padding: 5px 8px; font-size: 11px; }.review-button { flex: 0 0 auto; }.rally-status-chip { margin-top: 7px; } }

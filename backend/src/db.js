@@ -119,6 +119,9 @@ CREATE TABLE IF NOT EXISTS photo_reviews (
   review_note  TEXT NOT NULL DEFAULT ''
 );
 
+ALTER TABLE photo_reviews DROP CONSTRAINT IF EXISTS photo_reviews_status_check;
+ALTER TABLE photo_reviews ADD CONSTRAINT photo_reviews_status_check CHECK (status IN ('PENDING','APPROVED','REJECTED','SUPERSEDED'));
+
 -- Recupera fotografías que llegaron antes de que se registrara la revisión.
 INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json)
 SELECT 'photo_' || e.id, e.team_id, e.checkpoint_id, 0, e.late, e.captured_at, e.received_at,
@@ -143,6 +146,23 @@ CREATE TABLE IF NOT EXISTS answer_reviews (
   submitted_at  BIGINT NOT NULL,
   reviewed_at   BIGINT,
   review_note   TEXT NOT NULL DEFAULT ''
+);
+
+ALTER TABLE answer_reviews DROP CONSTRAINT IF EXISTS answer_reviews_status_check;
+ALTER TABLE answer_reviews ADD CONSTRAINT answer_reviews_status_check CHECK (status IN ('PENDING','APPROVED','REJECTED','SUPERSEDED'));
+
+-- Si existían varias solicitudes pendientes por errores anteriores, conserva activa solo la más reciente.
+UPDATE photo_reviews older SET status='SUPERSEDED'
+WHERE older.status='PENDING' AND EXISTS (
+  SELECT 1 FROM photo_reviews newer
+  WHERE newer.team_id=older.team_id AND newer.checkpoint_id=older.checkpoint_id AND newer.status='PENDING'
+    AND (newer.submitted_at > older.submitted_at OR (newer.submitted_at = older.submitted_at AND newer.evidence_id > older.evidence_id))
+);
+UPDATE answer_reviews older SET status='SUPERSEDED'
+WHERE older.status='PENDING' AND EXISTS (
+  SELECT 1 FROM answer_reviews newer
+  WHERE newer.team_id=older.team_id AND newer.checkpoint_id=older.checkpoint_id AND newer.status='PENDING'
+    AND (newer.submitted_at > older.submitted_at OR (newer.submitted_at = older.submitted_at AND newer.submission_id > older.submission_id))
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -183,6 +203,8 @@ CREATE INDEX IF NOT EXISTS idx_evidences_cp ON evidences(team_id, checkpoint_id)
 CREATE INDEX IF NOT EXISTS idx_teams_rally ON teams(rally_id);
 CREATE INDEX IF NOT EXISTS idx_photo_reviews_status ON photo_reviews(status, submitted_at);
 CREATE INDEX IF NOT EXISTS idx_answer_reviews_status ON answer_reviews(status, submitted_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_photo_reviews_one_pending_per_station ON photo_reviews(team_id, checkpoint_id) WHERE status='PENDING';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_answer_reviews_one_pending_per_station ON answer_reviews(team_id, checkpoint_id) WHERE status='PENDING';
 `;
 
 /* ---------- Drivers ---------- */

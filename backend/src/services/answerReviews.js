@@ -6,7 +6,17 @@ import { teamState } from './play.js';
 
 export function reviewAnswer(rallyId, submissionId, action, note = '') {
   return tx(async () => {
-    const review = await one(
+    let review = await one(
+      `SELECT ar.*, s.answer_text, s.matched_answer
+       FROM answer_reviews ar JOIN submissions s ON s.id=ar.submission_id
+       JOIN teams t ON t.id=ar.team_id
+       WHERE ar.submission_id=? AND t.rally_id=?`,
+      submissionId, rallyId,
+    );
+    if (!review) throw notFound('ANSWER_REVIEW_NOT_FOUND', 'Respuesta no encontrada');
+    // Los envíos y las revisiones bloquean primero al equipo para serializar reemplazos.
+    await one('SELECT id FROM teams WHERE id=? AND rally_id=? FOR UPDATE', review.team_id, rallyId);
+    review = await one(
       `SELECT ar.*, s.answer_text, s.matched_answer
        FROM answer_reviews ar JOIN submissions s ON s.id=ar.submission_id
        JOIN teams t ON t.id=ar.team_id
@@ -30,8 +40,11 @@ export function reviewAnswer(rallyId, submissionId, action, note = '') {
     const checkpoint = await one('SELECT * FROM checkpoints WHERE id=? AND rally_id=?', review.checkpoint_id, rallyId);
     const team = await one('SELECT * FROM teams WHERE id=? AND rally_id=? FOR UPDATE', review.team_id, rallyId);
     const progress = await one('SELECT * FROM progress WHERE team_id=? AND checkpoint_id=? FOR UPDATE', team.id, checkpoint.id);
-    if (!progress || progress.status === 'COMPLETED') {
-      throw conflict('CHECKPOINT_ALREADY_COMPLETED', 'El equipo ya completó esta estación');
+    if (!progress) throw conflict('CHECKPOINT_NOT_ACTIVE', 'El equipo todavía no tiene esta estación activa');
+    if (progress.status === 'COMPLETED') {
+      await run("UPDATE answer_reviews SET status='APPROVED', reviewed_at=?, review_note=? WHERE submission_id=?", reviewedAt, note, submissionId);
+      await run('UPDATE submissions SET correct=1 WHERE id=?', submissionId);
+      return { submissionId, status: 'APPROVED', reviewedAt, pointsAwarded: 0, score: team.score, alreadyCompleted: true };
     }
 
     const pointsAwarded = Math.max(0, checkpoint.points);

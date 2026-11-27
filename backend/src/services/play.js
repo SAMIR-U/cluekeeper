@@ -96,6 +96,12 @@ export async function routeCurrent(rally, team) {
 
 export async function progressView(rally, team) {
   const state = await teamState(rally, team);
+  const reviews = await all(
+    'SELECT checkpoint_id, status, submitted_at, reviewed_at, review_note FROM photo_reviews WHERE team_id=? ORDER BY submitted_at DESC',
+    team.id,
+  );
+  const latestReview = new Map();
+  for (const review of reviews) if (!latestReview.has(review.checkpoint_id)) latestReview.set(review.checkpoint_id, review);
   return {
     completed: state.completed,
     total: state.total,
@@ -108,6 +114,9 @@ export async function progressView(rally, team) {
       points: cp.points,
       pointsAwarded: p?.points_awarded ?? 0,
       attempts: p?.attempts ?? 0,
+      reviewStatus: latestReview.get(cp.id)?.status ?? null,
+      reviewSubmittedAt: latestReview.get(cp.id)?.submitted_at ?? null,
+      reviewNote: latestReview.get(cp.id)?.review_note ?? '',
       unlockedAt,
       arrivedAt: p?.arrived_at ?? null,
       completedAt: p?.completed_at ?? null,
@@ -252,13 +261,33 @@ async function evaluate(cp, team, body) {
         throw badRequest('ANSWER_REQUIRED', 'Escribe tu respuesta');
       }
       const given = normalizeText(body.answer);
-      return answer.acceptedAnswers.some((a) => normalizeText(a) === given);
+      const matchedAnswer = (answer.acceptedAnswers ?? []).find((candidate) => {
+        const expected = normalizeText(candidate);
+        if (expected === given) return true;
+        if (!expected || !given) return false;
+        const previous = Array.from({ length: expected.length + 1 }, (_, i) => i);
+        for (let i = 1; i <= given.length; i++) {
+          let diagonal = previous[0];
+          previous[0] = i;
+          for (let j = 1; j <= expected.length; j++) {
+            const above = previous[j];
+            previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (given[i - 1] === expected[j - 1] ? 0 : 1));
+            diagonal = above;
+          }
+        }
+        const distance = previous[expected.length];
+        const shorter = Math.min(expected.length, given.length);
+        const ratio = 1 - distance / Math.max(expected.length, given.length);
+        return shorter >= 5 && distance <= 2 && ratio >= 0.8;
+      });
+      return { correct: Boolean(matchedAnswer), answerText: body.answer.trim(), matchedAnswer: matchedAnswer ?? null };
     }
     case 'COMPASS': {
       if (typeof body.heading !== 'number' || body.heading < 0 || body.heading > 360) {
         throw badRequest('HEADING_REQUIRED', 'Se requiere el rumbo (0-360)');
       }
-      return angularDiff(body.heading, answer.bearing) <= answer.tolerance;
+      const correct = angularDiff(body.heading, answer.bearing) <= answer.tolerance;
+      return { correct, answerText: `${body.heading}°`, matchedAnswer: `${answer.bearing}° ± ${answer.tolerance}°` };
     }
     default: {
       // PHOTO / AUDIO: la evidencia debe haberse recibido antes (sincronizada)
@@ -274,7 +303,7 @@ async function evaluate(cp, team, body) {
           'Aún no se ha recibido la evidencia. Sincroniza tu foto/audio e inténtalo de nuevo.',
         );
       }
-      return true;
+      return { correct: true, answerText: null, matchedAnswer: null };
     }
   }
 }
@@ -298,7 +327,34 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
     }
     const { cp } = item;
 
-    const correct = await evaluate(cp, team, body);
+    const evaluation = await evaluate(cp, team, body);
+    const { correct, answerText, matchedAnswer } = evaluation;
+
+    // Las fotos no desbloquean el siguiente punto hasta que organización las revise.
+    if (cp.challenge_type === 'PHOTO') {
+      const evidenceId = body.evidenceId;
+      const existingReview = await one('SELECT status FROM photo_reviews WHERE evidence_id=?', evidenceId);
+      if (existingReview?.status === 'APPROVED') throw conflict('ALREADY_COMPLETED', 'Esta foto ya fue aprobada');
+      if (existingReview?.status === 'REJECTED') throw conflict('EVIDENCE_REJECTED', 'Toma una fotografía nueva para volver a enviar este reto');
+      if (!existingReview) {
+        await run(
+          `INSERT INTO photo_reviews (evidence_id, team_id, checkpoint_id, submission_id, status, submitted_at)
+           VALUES (?,?,?,?,'PENDING',?)`,
+          evidenceId, team.id, cp.id, submissionId, t,
+        );
+      }
+      const result = {
+        submissionId, correct: false, completed: false, pendingReview: true, pointsAwarded: 0,
+        reviewStatus: existingReview?.status ?? 'PENDING',
+      };
+      await run(
+        `INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json, answer_text, matched_answer)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        submissionId, team.id, cp.id, 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result), answerText, matchedAnswer,
+      );
+      return result;
+    }
+
     const priorAttempts = item.p.attempts;
     const attempts = priorAttempts + 1;
     const exhausted = !correct && attempts >= rally.max_attempts;
@@ -348,8 +404,8 @@ export function submit(rally, team, checkpointId, body, idempotencyKey) {
     }
 
     await run(
-      'INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json) VALUES (?,?,?,?,?,?,?,?)',
-      submissionId, team.id, cp.id, correct ? 1 : 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result),
+      'INSERT INTO submissions (id, team_id, checkpoint_id, correct, late, captured_at, created_at, result_json, answer_text, matched_answer) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      submissionId, team.id, cp.id, correct ? 1 : 0, late ? 1 : 0, t, Date.now(), JSON.stringify(result), answerText, matchedAnswer,
     );
     return result;
   });

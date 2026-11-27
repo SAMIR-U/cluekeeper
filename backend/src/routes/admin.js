@@ -10,6 +10,7 @@ import { authenticate, ownedRally } from '../middleware/index.js';
 import { extendTime, finishRally, publicRally, startRally, loadRally } from '../services/rallies.js';
 import { ranking } from '../services/ranking.js';
 import { buildReport, reportToCsv } from '../services/report.js';
+import { reviewPhoto } from '../services/photoReviews.js';
 import * as admin from '../services/admin.js';
 
 const router = Router();
@@ -221,8 +222,10 @@ router.get('/rallies/:id/report', async (req, res) => {
 router.get('/rallies/:id/evidences', async (req, res) => {
   const rally = await ownedRally(req);
   const rows = await all(
-    `SELECT e.id, e.type, e.mime, e.size, e.late, e.captured_at, e.received_at, e.checkpoint_id, c.position, t.id AS team_id, t.name AS team_name
+    `SELECT e.id, e.type, e.mime, e.size, e.late, e.captured_at, e.received_at, e.checkpoint_id, c.position,
+            t.id AS team_id, t.name AS team_name, pr.status AS review_status, pr.reviewed_at, pr.review_note
      FROM evidences e JOIN teams t ON t.id=e.team_id JOIN checkpoints c ON c.id=e.checkpoint_id
+     LEFT JOIN photo_reviews pr ON pr.evidence_id=e.id
      WHERE t.rally_id=? ORDER BY e.received_at`,
     rally.id,
   );
@@ -232,9 +235,35 @@ router.get('/rallies/:id/evidences', async (req, res) => {
       capturedAt: e.captured_at, receivedAt: e.received_at,
       checkpointId: e.checkpoint_id, checkpointPosition: e.position,
       teamId: e.team_id, teamName: e.team_name,
+      reviewStatus: e.review_status ?? null, reviewedAt: e.reviewed_at, reviewNote: e.review_note ?? '',
       fileUrl: `/api/admin/rallies/${rally.id}/evidences/${e.id}/file`,
     })),
   });
+});
+
+router.get('/rallies/:id/submissions', async (req, res) => {
+  const rally = await ownedRally(req);
+  const rows = await all(
+    `SELECT s.id, s.answer_text, s.matched_answer, s.correct, s.captured_at, s.created_at,
+            s.result_json, c.id AS checkpoint_id, c.position, c.title AS checkpoint_title,
+            t.id AS team_id, t.name AS team_name
+     FROM submissions s JOIN teams t ON t.id=s.team_id JOIN checkpoints c ON c.id=s.checkpoint_id
+     WHERE t.rally_id=? AND s.answer_text IS NOT NULL ORDER BY s.created_at DESC`,
+    rally.id,
+  );
+  res.json({ submissions: rows.map((s) => ({
+    id: s.id, answerText: s.answer_text, matchedAnswer: s.matched_answer,
+    correct: !!s.correct, capturedAt: s.captured_at, createdAt: s.created_at,
+    pendingReview: Boolean(JSON.parse(s.result_json).pendingReview),
+    checkpointId: s.checkpoint_id, checkpointPosition: s.position, checkpointTitle: s.checkpoint_title,
+    teamId: s.team_id, teamName: s.team_name,
+  })) });
+});
+
+router.post('/rallies/:id/evidences/:eid/review', async (req, res) => {
+  const rally = await ownedRally(req);
+  const { action, note } = parse(z.object({ action: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(300).optional() }), req.body);
+  res.json(await reviewPhoto(rally.id, req.params.eid, action, note ?? ''));
 });
 
 router.get('/rallies/:id/evidences/:eid/file', async (req, res) => {

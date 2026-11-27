@@ -34,16 +34,14 @@
   opacity: 0.5;
 }
 
-.file-label {
-  display: block;
-  margin: 16px 0;
-}
-
-.file-label input {
-  display: block;
-  margin-top: 8px;
-  max-width: 100%;
-}
+.photo-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.camera-evidence .photo-actions button,
+.file-picker { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; margin: 0; border: 1px solid #cddfd2; border-radius: 12px; padding: 10px 14px; background: #e8f3eb; color: #155e43; font-size: 14px; font-weight: 750; cursor: pointer; }
+.file-picker { position: relative; overflow: hidden; }
+.file-picker input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.file-picker:focus-within { outline: 3px solid #82c9a2; outline-offset: 2px; }
+.photo-filename { overflow: hidden; margin: 0; color: #64776c; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.camera-evidence .photo-discard { display: inline-flex; align-items: center; gap: 7px; background: #fff3ef; color: #a43e2a; border-color: #f0d0c7; }
 
 .photo-card {
   padding: 12px;

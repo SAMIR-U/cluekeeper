@@ -75,6 +75,16 @@ export default defineConfig({
               },
             },
           },
+          {
+            urlPattern: ({ url }) =>
+              url.origin === self.location.origin && /\/pwa-(?:192x192|512x512)\.png$/.test(url.pathname),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "cluekeeper-brand-v1",
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
         ],
       },
     }),

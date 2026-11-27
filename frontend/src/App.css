@@ -77,6 +77,26 @@
 .admin-logout { display: flex; justify-content: flex-end; margin: 22px 0 10px; padding-top: 14px; border-top: 1px solid #e3ebe5; }
 .pin-e { left: 17%; top: 25%; }.pin-f { left: 53%; top: 71%; }.pin-g { left: 85%; top: 52%; }.pin-h { left: 60%; top: 14%; }
 @media (max-width: 640px) { .admin-logout { justify-content: center; } }
+.brand-mark-fallback { display: grid; flex: none; width: 46px; height: 46px; place-items: center; border-radius: 14px; background: linear-gradient(145deg, #0c7660, #112b55); color: #fff; }
+.rally-status-chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 9px; border: 1px solid #dcebe1; border-radius: 999px; padding: 6px 11px; background: #edf7f0; color: #22654c; font-size: 12px; font-weight: 800; }
+.rally-status-chip i { width: 8px; height: 8px; border-radius: 50%; background: #19a36f; }
+.rally-status-chip.not_started { background: #fff7ed; border-color: #f6dfbd; color: #9a5b1b; }.rally-status-chip.not_started i { background: #ee9c3e; }.rally-status-chip.finished { background: #f3f4f4; border-color: #e0e4e2; color: #64716b; }.rally-status-chip.finished i { background: #89958e; }
+.push-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: 0 0 14px; border: 1px solid #deebe2; border-radius: 14px; padding: 10px 13px; background: #f8fbf8; }
+.push-hint { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: #63786c; font-size: 12px; line-height: 1.4; }
+.push-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.push-toggle .button { min-height: 38px; padding: 7px 11px; font-size: 12px; }
+.push-success { margin: 0; color: #08744f; font-size: 13px; font-weight: 700; }
+.review-notice { display: flex; align-items: center; gap: 10px; margin: 0 0 13px; border: 1px solid #d9e8dc; border-radius: 12px; padding: 12px 14px; background: #eff8f1; color: #286348; font-size: 14px; font-weight: 700; line-height: 1.45; }
+.review-notice svg { flex: none; }.review-notice.rejected { border-color: #f1d3c9; background: #fff4ef; color: #9b482f; }
+.evidence-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 10px 0; }
+.evidence-row>div:first-of-type, .submission-row>div { min-width: 0; }
+.evidence-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.review-button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+.review-label { color: #718078; font-size: 12px; font-weight: 800; }
+.review-label.pending { color: #a05a15; }.review-label.approved { color: #08744f; }.review-label.rejected { color: #aa4430; }
+.submission-list-title { margin: 25px 0 7px; font: 700 17px var(--font-sans); color: var(--ink); }
+.submission-row { grid-template-columns: 42px minmax(0, 1fr) auto; padding: 9px 0; }
+@media (max-width: 640px) { .brand-mark-fallback { width: 41px; height: 41px; border-radius: 13px; }.push-toggle { align-items: stretch; flex-direction: column; }.push-actions { display: grid; }.push-actions .button { width: 100%; }.evidence-row, .submission-row { grid-template-columns: 34px minmax(0, 1fr); }.evidence-actions, .submission-row>.review-label { grid-column: 2; justify-content: flex-start; }.evidence-actions { justify-content: flex-start; }.review-button { flex: 1; }.rally-status-chip { margin-top: 7px; } }
 .campus-aside { display: flex; flex-direction: column; }
 .campus-carousel { display: grid; flex: 1; grid-template-rows: minmax(285px, 1fr) auto; gap: 13px; min-height: 0; margin: 20px -10px 0; outline: none; }
 .campus-slide { position: relative; min-height: 0; overflow: hidden; margin: 0; border: 1px solid #ffffff2b; border-radius: 22px; background: #123e33; isolation: isolate; }

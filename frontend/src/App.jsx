@@ -45,7 +45,10 @@ const STATION_PHOTOS = [
 ];
 
 function formatDuration(seconds = 0) {
-  const safe = Math.max(0, Math.floor(seconds));
+  if (seconds == null) return "—";
+  const numeric = Number(seconds);
+  if (!Number.isFinite(numeric)) return "—";
+  const safe = Math.max(0, Math.floor(numeric));
   return [Math.floor(safe / 3600), Math.floor((safe % 3600) / 60), safe % 60]
     .map(value => String(value).padStart(2, "0")).join(":");
 }
@@ -70,6 +73,13 @@ function PageTabs({ items, value, onChange, label }) {
       </button>;
     })}
   </nav>;
+}
+
+function BrandMark() {
+  const [failed, setFailed] = useState(false);
+  return failed
+    ? <span className="brand-mark-fallback" aria-hidden="true"><Compass size={24}/></span>
+    : <img className="brand-mark-image" src="/pwa-192x192.png" alt="" onError={() => setFailed(true)}/>;
 }
 
 function AccessPanel({ onJoin, onOrganizer, busy, initialCode = "UPTC26" }) {
@@ -132,7 +142,7 @@ function RoutePanel({ route, progress, rallyStatus, onRefresh, onRanking, loadin
       </> : <div className="empty-state"><span className="empty-icon">{timeUp || route?.state === "ALL_COMPLETED" ? <Trophy size={25}/> : <Clock3 size={25}/>}</span><h3>{route?.state === "ALL_COMPLETED" ? "¡Lo lograron!" : timeUp ? "El tiempo del rally terminó" : "El rally aún no comienza"}</h3><p>{route?.state === "ALL_COMPLETED" ? "Su equipo recorrió todos los puntos de la ruta." : timeUp ? "Consulta la clasificación y el resultado final del equipo." : "La pista aparecerá aquí cuando organización inicie el evento."}</p>{(timeUp || route?.state === "ALL_COMPLETED") && <button type="button" className="button button-primary" onClick={onRanking}>Ver clasificación</button>}</div>}
     </section>
     <aside className="panel route-side"><div className="panel-heading"><div><span className="eyebrow">RECORRIDO</span><h2>Estaciones</h2></div><span className="count-pill">{progress?.completed || 0}/{progress?.total || 0}</span></div>
-      <div className="station-list">{steps.map((step, index) => <div className={`station-row ${step.status.toLowerCase()}`} key={step.id}><span className="station-number">{step.status === "COMPLETED" ? <Check size={15}/> : String(index + 1).padStart(2, "0")}</span><div><strong>{step.status === "LOCKED" ? `Estación ${index + 1}` : step.title || `Checkpoint ${index + 1}`}</strong><span>{step.status === "COMPLETED" ? `Completado · +${step.pointsAwarded} pts` : step.status === "ARRIVED" ? "Llegada validada · reto disponible" : step.status === "CLUE" ? "Pista actual" : "Bloqueado"}</span></div><span className={`station-status ${step.status.toLowerCase()}`}>{step.status === "COMPLETED" ? "Listo" : step.status === "CLUE" || step.status === "ARRIVED" ? "Actual" : "Luego"}</span></div>)}</div>
+      <div className="station-list">{steps.map((step, index) => <div className={`station-row ${step.status.toLowerCase()}`} key={step.id}><span className="station-number">{step.status === "COMPLETED" ? <Check size={15}/> : String(index + 1).padStart(2, "0")}</span><div><strong>{step.status === "LOCKED" ? `Estación ${index + 1}` : step.title || `Checkpoint ${index + 1}`}</strong><span>{step.status === "COMPLETED" ? `Completado · +${step.pointsAwarded} pts` : step.reviewStatus === "PENDING" ? "Foto en revisión · esperando aprobación" : step.reviewStatus === "REJECTED" ? "Foto rechazada · requiere nuevo envío" : step.status === "ARRIVED" ? "Llegada validada · reto disponible" : step.status === "CLUE" ? "Pista actual" : "Bloqueado"}</span></div><span className={`station-status ${step.reviewStatus === "PENDING" ? "review-pending" : step.status.toLowerCase()}`}>{step.reviewStatus === "PENDING" ? "Revisión" : step.status === "COMPLETED" ? "Listo" : step.status === "CLUE" || step.status === "ARRIVED" ? "Actual" : "Luego"}</span></div>)}</div>
       <div className="route-tip"><ShieldCheck size={17}/><span>Las ubicaciones se desbloquean progresivamente para mantener la sorpresa.</span></div>
     </aside>
   </div>;
@@ -174,7 +184,7 @@ function QrArrival({ onResult }) {
   return <div className="qr-arrival"><div><strong>Escaneo QR</strong><span>Lee el código físico de la estación.</span></div>{scanning ? <><video ref={videoRef} className="qr-video" muted playsInline/><button type="button" className="button button-soft" onClick={stop}><X size={16}/> Cancelar</button></> : <button type="button" className="button button-soft" onClick={start}><QrCode size={16}/> Abrir cámara</button>}{error && <p className="form-error" role="alert">{error}</p>}</div>;
 }
 
-function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onProximity, notify }) {
+function ChallengePanel({ route, progress, onArrive, onSubmit, busy, proximity, geo, onProximity, notify }) {
   const [answer, setAnswer] = useState("");
   const [heading, setHeading] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -182,9 +192,12 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
   const checkpoint = route?.checkpoint;
   const challenge = checkpoint?.challenge?.content;
   const checkpointId = checkpoint?.id;
+  const checkpointProgress = progress?.checkpoints?.find(item => item.id === checkpointId);
+  const reviewPending = checkpointProgress?.reviewStatus === "PENDING";
+  const reviewRejected = checkpointProgress?.reviewStatus === "REJECTED";
   const saved = useLiveQuery(() => checkpointId ? db.evidences.where("checkpointId").equals(checkpointId).toArray() : Promise.resolve([]), [checkpointId], []);
-  const currentEvidence = [...saved].reverse().find(item => item.type === challenge?.type && item.status === "SENT");
-  const localEvidence = [...saved].reverse().find(item => item.type === challenge?.type);
+  const orderedEvidence = [...saved].sort((a, b) => b.createdAt - a.createdAt);
+  const localEvidence = orderedEvidence.find(item => item.type === challenge?.type);
   const arrived = checkpoint?.status === "ARRIVED";
   const cpArrive = async body => {
     setFeedback("");
@@ -196,24 +209,27 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
     event.preventDefault(); setFeedback("");
     try {
       if (!arrived) { setFeedback("Valida primero tu llegada a la estación."); return; }
+      if (reviewPending) { setFeedback("La foto ya está en revisión. Organización debe aprobarla para desbloquear la siguiente pista."); return; }
       submissionKey.current ||= crypto.randomUUID();
       let evidenceId;
       if (["PHOTO", "AUDIO"].includes(challenge?.type)) {
         if (!localEvidence) { setFeedback(challenge?.type === "PHOTO" ? "Guarda una foto para continuar." : "Guarda un audio para continuar."); return; }
-        if (!currentEvidence) {
+        if (reviewRejected && challenge?.type === "PHOTO" && localEvidence.createdAt <= checkpointProgress.reviewSubmittedAt) { setFeedback("Captura una foto nueva: la anterior fue rechazada."); return; }
+        if (localEvidence.status !== "SENT") {
           if (!navigator.onLine) evidenceId = localEvidence.id;
           else {
             setFeedback("Sincronizando la evidencia con el servidor…");
             await syncEvidences();
             const refreshed = await db.evidences.where("checkpointId").equals(checkpointId).toArray();
-            evidenceId = [...refreshed].reverse().find(item => item.type === challenge.type && item.status === "SENT")?.id;
+            evidenceId = refreshed.find(item => item.id === localEvidence.id && item.status === "SENT")?.id;
             if (!evidenceId) { setFeedback("La evidencia sigue pendiente de sincronización. Revisa tu conexión y vuelve a intentar."); return; }
           }
-        } else evidenceId = currentEvidence.id;
+        } else evidenceId = localEvidence.id;
       }
       const result = await onSubmit(checkpointId, { submissionId: submissionKey.current, ...(challenge?.type === "QUESTION" ? { answer } : {}), ...(challenge?.type === "COMPASS" ? { heading: Number(heading) } : {}), ...(evidenceId ? { evidenceId } : {}), capturedAt: Date.now() });
       if (result.pending) { setFeedback("Reto guardado sin conexión. Se enviará cuando recuperes conexión."); return; }
       submissionKey.current = null;
+      if (result.pendingReview) { setFeedback("Foto enviada. La siguiente estación se desbloqueará cuando organización la apruebe."); return; }
       if (result.replayed) setFeedback("Este reto ya estaba registrado. Tu progreso se actualizó.");
       else if (result.correct || result.completed) { setFeedback(result.correct ? `¡Correcto! +${result.pointsAwarded} puntos.` : `Reto cerrado. Puntos otorgados: ${result.pointsAwarded}.`); notify("Progreso sincronizado con el rally."); }
       else setFeedback(`Respuesta incorrecta. ${result.attemptsLeft} intentos restantes.`);
@@ -237,12 +253,13 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
     <div className="challenge-columns">
       <section className="panel arrival-panel"><div className="panel-heading"><div><span className="eyebrow">PASO 1</span><h3>Confirma tu llegada</h3></div><MapPin size={20}/></div><p>Valida tu presencia en la estación con GPS o escanea el QR del punto.</p><div className="arrival-actions"><button type="button" className="button button-dark" disabled={geo.loading || busy || arrived} onClick={async () => { const position = geo.position || await geo.getLocation(); if (!position) return; const gpsArrival = { method: "GEOFENCE", ...position, capturedAt: Date.now() }; if (!navigator.onLine) { await cpArrive(gpsArrival); return; } try { const result = await onProximity(checkpointId, position); if (result.reliable && result.inside) await cpArrive(gpsArrival); else setFeedback(result.reliable && Number.isFinite(result.remaining) ? `Aún estás fuera del perímetro · ${Math.max(0, result.remaining)} m` : "La señal GPS es poco precisa. Intenta en un espacio abierto o usa el QR."); } catch (error) { if (!error.status || error.status >= 500) await cpArrive(gpsArrival); else setFeedback(error.message); } }}><Navigation size={17}/>{arrived ? "Validado" : geo.loading ? "Localizando…" : "Validar con GPS"}</button></div><QrArrival checkpointId={checkpointId} onResult={verifyQr}/>{proximity?.reliable && !proximity.inside && Number.isFinite(proximity.remaining) && <p className="hint-text">Distancia aproximada: {Math.max(0, proximity.remaining)} m.</p>}{feedback && <p className="inline-feedback" role="status">{feedback}</p>}</section>
       <section className="panel answer-panel"><div className="panel-heading"><div><span className="eyebrow">PASO 2 · {challenge?.type || "RETO"}</span><h3>{arrived ? "Completa la misión" : "Reto bloqueado"}</h3></div>{challenge?.type === "PHOTO" ? <Target size={20}/> : challenge?.type === "AUDIO" ? <Activity size={20}/> : challenge?.type === "COMPASS" ? <Compass size={20}/> : <BookOpen size={20}/>}</div>
+        {reviewPending && <div className="review-notice" role="status"><Clock3 size={18}/><span>Foto en revisión. La próxima pista se habilita cuando el organizador la apruebe.</span></div>}{reviewRejected && <div className="review-notice rejected" role="status"><Camera size={18}/><span>La foto fue rechazada. Captura una nueva imagen para volver a enviarla.{checkpointProgress.reviewNote ? ` Motivo: ${checkpointProgress.reviewNote}` : ""}</span></div>}
         {!arrived ? <div className="locked-prompt"><ShieldCheck size={22}/><span>La misión se abrirá al validar la llegada.</span></div> : !challenge ? <div className="locked-prompt"><Cloud size={22}/><span>El reto se descargará cuando el dispositivo vuelva a conectarse.</span></div> : <form onSubmit={submit}>
           {challenge?.type === "QUESTION" && <label className="field-label" htmlFor="challenge-answer">Tu respuesta<input id="challenge-answer" name="answer" value={answer} onChange={event => setAnswer(event.target.value)} maxLength={500} required placeholder="Escribe lo que observaste"/></label>}
           {challenge?.type === "PHOTO" && <CameraEvidence checkpointId={checkpointId}/>}
           {challenge?.type === "AUDIO" && <AudioEvidence checkpointId={checkpointId}/>}
           {challenge?.type === "COMPASS" && <div className="compass-capture"><p>Captura el rumbo que marca el sensor del teléfono.</p><div className="compass-input-row"><input aria-label="Rumbo en grados" type="number" min="0" max="360" value={heading} onChange={event => setHeading(event.target.value)} required placeholder="0–360°"/><button type="button" className="button button-soft" onClick={readCompass}><Compass size={17}/> Capturar rumbo</button></div></div>}
-          <button className="button button-primary full submit-challenge" type="submit" disabled={busy}>{busy ? "Enviando…" : <>Enviar reto <ArrowRight size={17}/></>}</button>
+          <button className="button button-primary full submit-challenge" type="submit" disabled={busy || reviewPending}>{reviewPending ? "Foto en revisión…" : busy ? "Enviando…" : <>Enviar reto <ArrowRight size={17}/></>}</button>
         </form>}
       </section>
     </div>
@@ -251,7 +268,7 @@ function ChallengePanel({ route, onArrive, onSubmit, busy, proximity, geo, onPro
 
 function ProgressPanel({ progress, rally, remaining }) {
   const checkpoints = progress?.checkpoints || [];
-  return <div className="workspace-grid progress-layout"><section className="panel main-panel"><div className="panel-heading"><div><span className="eyebrow">AVANCE DEL EQUIPO</span><h2>Bitácora del recorrido</h2></div><span className="count-pill">{progress?.completed || 0} / {progress?.total || 0}</span></div><progress className="progress-meter" aria-label="Progreso del rally" max={progress?.total || 1} value={progress?.completed || 0}/><p className="muted-text">{progress?.total ? `${Math.round((progress.completed / progress.total) * 100)}% de la aventura completada` : "Esperando datos del rally"}</p><div className="progress-list">{checkpoints.map((item, index) => <article className="progress-row" key={item.id}><span className={`progress-node ${item.status.toLowerCase()}`}>{item.status === "COMPLETED" ? <Check size={16}/> : String(index + 1).padStart(2, "0")}</span><div className="progress-copy"><strong>{item.status === "LOCKED" ? `Checkpoint ${index + 1}` : item.title || `Checkpoint ${index + 1}`}</strong><span>{item.status === "COMPLETED" ? `Completado ${dateTime(item.completedAt)} · ${item.secondsTotal ?? "—"} s` : item.status === "ARRIVED" ? `Llegada ${dateTime(item.arrivedAt)} · reto en curso` : item.status === "CLUE" ? "Pista desbloqueada" : "Se desbloqueará al avanzar"}</span></div><b>{item.status === "COMPLETED" ? `+${item.pointsAwarded}` : `${item.points} pts`}</b></article>)}</div></section><aside className="panel stats-panel"><span className="eyebrow">TABLERO DE MISIÓN</span><div className="stat-block"><Trophy size={19}/><strong>{rally?.team?.score || 0}</strong><span>Puntos del equipo</span></div><div className="stat-block"><Target size={19}/><strong>{progress?.completed || 0}<small> / {progress?.total || 0}</small></strong><span>Estaciones completadas</span></div><div className="stat-block"><Clock3 size={19}/><strong>{formatDuration(remaining)}</strong><span>Tiempo restante</span></div></aside></div>;
+  return <div className="workspace-grid progress-layout"><section className="panel main-panel"><div className="panel-heading"><div><span className="eyebrow">AVANCE DEL EQUIPO</span><h2>Bitácora del recorrido</h2></div><span className="count-pill">{progress?.completed || 0} / {progress?.total || 0}</span></div><progress className="progress-meter" aria-label="Progreso del rally" max={progress?.total || 1} value={progress?.completed || 0}/><p className="muted-text">{progress?.total ? `${Math.round((progress.completed / progress.total) * 100)}% de la aventura completada` : "Esperando datos del rally"}</p><div className="progress-list">{checkpoints.map((item, index) => <article className="progress-row" key={item.id}><span className={`progress-node ${item.status.toLowerCase()}`}>{item.status === "COMPLETED" ? <Check size={16}/> : String(index + 1).padStart(2, "0")}</span><div className="progress-copy"><strong>{item.status === "LOCKED" ? `Checkpoint ${index + 1}` : item.title || `Checkpoint ${index + 1}`}</strong><span>{item.status === "COMPLETED" ? `Completado ${dateTime(item.completedAt)} · ${item.secondsTotal ?? "—"} s` : item.reviewStatus === "PENDING" ? "Foto enviada · pendiente de aprobación" : item.reviewStatus === "REJECTED" ? "Foto rechazada · captura una nueva" : item.status === "ARRIVED" ? `Llegada ${dateTime(item.arrivedAt)} · reto en curso` : item.status === "CLUE" ? "Pista desbloqueada" : "Se desbloqueará al avanzar"}</span></div><b>{item.status === "COMPLETED" ? `+${item.pointsAwarded}` : `${item.points} pts`}</b></article>)}</div></section><aside className="panel stats-panel"><span className="eyebrow">TABLERO DE MISIÓN</span><div className="stat-block"><Trophy size={19}/><strong>{rally?.team?.score || 0}</strong><span>Puntos del equipo</span></div><div className="stat-block"><Target size={19}/><strong>{progress?.completed || 0}<small> / {progress?.total || 0}</small></strong><span>Estaciones completadas</span></div><div className="stat-block"><Clock3 size={19}/><strong>{formatDuration(remaining)}</strong><span>Tiempo restante</span></div></aside></div>;
 }
 
 function RankingPanel({ data, teamId }) {
@@ -266,20 +283,28 @@ function OrganizerAccess({ onLogin, onBack }) {
   return <div className="access-layout admin-login-layout"><section className="access-main"><button type="button" className="text-button back-button" onClick={onBack}>← Volver al rally</button><div className="eyebrow">ÁREA DE ORGANIZACIÓN</div><h1>Coordina la<br/><em>aventura.</em></h1><p className="lead">Controla tiempos, equipos y resultados desde un solo panel.</p><form className="join-form" onSubmit={submit}><label htmlFor="admin-email">Correo organizador</label><input type="email" id="admin-email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} placeholder="organizador@cluekeeper.test"/><label htmlFor="admin-password">Contraseña</label><input type="password" id="admin-password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)}/>{error && <p className="form-error" role="alert">{error}</p>}<button className="button button-primary full" disabled={busy}>{busy ? "Ingresando…" : "Abrir panel de organización"}<ArrowRight size={17}/></button></form></section><aside className="campus-aside admin-aside"><span className="admin-aside-icon"><Activity size={28}/></span><h2>El campus está listo.</h2><p>Inicia el rally UPTC para habilitar las pistas a los equipos.</p></aside></div>;
 }
 
-function OrganizerPanel({ data, selected, onSelect, onRefresh, onControl, onNewEdition, busy, onExport, onQr, onJoinQr, onEvidence, tab, tick, clockNow, clockOffset }) {
+function OrganizerPanel({ data, selected, onSelect, onRefresh, onControl, onNewEdition, onReview, busy, onExport, onQr, onJoinQr, onEvidence, tab, tick, clockNow, clockOffset }) {
   const [extra, setExtra] = useState("10");
   const rallies = data?.rallies || [];
   const rally = selected;
   const teams = data?.teams || [];
   const checkpoints = data?.checkpoints || [];
+  const remaining = rally?.status === "NOT_STARTED" ? null
+    : rally && rally.endsAt != null && Number.isFinite(Number(rally.endsAt))
+      ? Math.max(0, Math.floor((Number(rally.endsAt) - (clockNow + clockOffset)) / 1000))
+      : rally && rally.remainingSeconds != null && Number.isFinite(Number(rally.remainingSeconds))
+        ? Math.max(0, Number(rally.remainingSeconds) - tick) : null;
   return <div className="admin-workspace">
     <div className="admin-top-row"><div><span className="eyebrow">PANEL DE ORGANIZACIÓN</span><h2>{rally?.name || "Selecciona un rally"}</h2><p className="muted-text">{rally ? `${rally.code} · ${rally.status === "IN_PROGRESS" ? "En curso" : rally.status === "FINISHED" ? "Finalizado" : "Sin iniciar"}` : "Elige un evento para gestionar."}</p></div><div className="admin-actions"><select aria-label="Seleccionar rally" value={rally?.id || ""} onChange={e => onSelect(e.target.value)}>{rallies.map(item => <option key={item.id} value={item.id}>{item.name} · {item.code}</option>)}</select>{rally && <button type="button" className="button button-soft" onClick={() => onJoinQr(rally.id)}>QR de acceso</button>}<button type="button" className="icon-button" aria-label="Actualizar panel" onClick={onRefresh}><RefreshCw size={18}/></button></div></div>
     {!rally ? rallies.length ? <Skeleton rows={4}/> : <section className="panel empty-state admin-empty-state"><span className="empty-icon"><Flag size={25}/></span><h3>No hay rallies asignados a esta cuenta</h3><p>La API respondió, pero no encontró un rally para este organizador. En producción, verifica que `ADMIN_EMAIL` corresponda a la cuenta con la que iniciaste sesión y que el backend haya creado el rally UPTC26.</p><p>La lista se volverá a consultar automáticamente.</p></section> : <>
-      {tab === "overview" && <><div className="admin-metrics"><div className="panel metric-card"><Users size={19}/><strong>{rally.teamsCount ?? teams.length}</strong><span>equipos inscritos</span></div><div className="panel metric-card"><Target size={19}/><strong>{checkpoints.length}</strong><span>estaciones del rally</span></div><div className="panel metric-card"><Clock3 size={19}/><strong>{formatDuration(Number.isFinite(rally.endsAt) ? Math.max(0, Math.floor((rally.endsAt - (clockNow + clockOffset)) / 1000)) : Math.max(0, (rally.remainingSeconds ?? 0) - tick))}</strong><span>tiempo restante</span></div></div>
+      {tab === "overview" && <><div className="admin-metrics"><div className="panel metric-card"><Users size={19}/><strong>{rally.teamsCount ?? teams.length}</strong><span>equipos inscritos</span></div><div className="panel metric-card"><Target size={19}/><strong>{checkpoints.length}</strong><span>estaciones del rally</span></div><div className="panel metric-card"><Clock3 size={19}/><strong>{formatDuration(rally.status === "NOT_STARTED" ? Number(rally.durationMinutes) * 60 : remaining)}</strong><span>{rally.status === "NOT_STARTED" ? "duración del rally" : "tiempo restante"}</span></div></div>
       <div className="admin-grid"><section className="panel control-panel"><span className="eyebrow">CONTROL DEL EVENTO</span><h3>Estado del rally</h3><p>{rally.status === "IN_PROGRESS" ? "Los equipos pueden consultar sus pistas y registrar avances." : rally.status === "FINISHED" ? "El evento está cerrado. Crea una nueva edición para volver a jugar; los resultados actuales se conservarán." : "Inicia el rally cuando las estaciones estén preparadas."}</p><div className="control-actions">{rally.status === "NOT_STARTED" && <button className="button button-primary" disabled={busy} onClick={() => onControl("start")}><Rocket size={17}/> Iniciar rally</button>}{rally.status === "FINISHED" && <button type="button" className="button button-primary" disabled={busy} onClick={onNewEdition}><RefreshCw size={17}/> Crear nueva edición</button>}{rally.status === "IN_PROGRESS" && <><div className="extend-control"><label htmlFor="extend-minutes">Extender</label><input id="extend-minutes" type="number" min="1" max="240" value={extra} onChange={e => setExtra(e.target.value)}/><span>min</span><button type="button" className="button button-soft" disabled={busy} onClick={() => onControl("extend", Number(extra))}>Añadir tiempo</button></div><button className="button button-danger" disabled={busy} onClick={() => onControl("finish")}>Finalizar rally</button></>}</div></section><section className="panel report-panel"><span className="report-icon"><Award size={21}/></span><div><span className="eyebrow">CIERRE DEL EVENTO</span><h3>Reporte de resultados</h3><p>Descarga la clasificación oficial en formato CSV.</p></div><button className="button button-dark" onClick={onExport}>Exportar CSV</button></section></div></>}
       {tab === "teams" && <section className="panel admin-table"><div className="panel-heading"><div><span className="eyebrow">CLASIFICACIÓN</span><h3>Equipos registrados</h3></div><span className="count-pill">{teams.length} equipos</span></div>{teams.length ? <div className="admin-team-list">{teams.map(team => <div className="admin-team-row" key={team.teamId}><span className="rank-number">{String(team.rank).padStart(2, "0")}</span><strong>{team.name}</strong><span>{team.completedCheckpoints} / {checkpoints.length} estaciones</span><b>{team.score} pts</b></div>)}</div> : <p className="muted-text">Los equipos aparecerán cuando se inscriban al rally.</p>}</section>}
       {tab === "checkpoints" && <section className="panel admin-table checkpoint-table"><div className="panel-heading"><div><span className="eyebrow">RUTA CONFIGURADA</span><h3>Estaciones del rally</h3></div></div>{checkpoints.map(cp => <div className="checkpoint-row" key={cp.id}><span className="checkpoint-order">{String(cp.position).padStart(2, "0")}</span><div><strong>{cp.title}</strong><span>{cp.challenge?.type} · {cp.points} pts · {cp.radius} m</span></div><button type="button" className="text-link" onClick={() => onQr(cp.id, rally.id)}>Ver QR</button></div>)}</section>}
-      {tab === "evidences" && <section className="panel admin-table"><div className="panel-heading"><div><span className="eyebrow">ARCHIVO DEL RALLY</span><h3>Evidencias recibidas</h3></div><span className="count-pill">{data.evidences?.length || 0}</span></div>{data.evidences?.length ? <div className="admin-team-list">{data.evidences.map(item => <div className="checkpoint-row" key={item.id}><span className="checkpoint-order">{item.type === "PHOTO" ? <Camera size={16}/> : <Activity size={16}/>}</span><div><strong>{item.teamName} · Estación {item.checkpointPosition}</strong><span>{item.type === "PHOTO" ? "Fotografía" : "Audio"} · {new Date(item.receivedAt).toLocaleString("es-CO")}{item.late ? " · sincronizada tarde" : ""}</span></div><button type="button" className="text-link" onClick={() => onEvidence(rally.id, item.id)}>Abrir</button></div>)}</div> : <p className="muted-text">Las fotos y audios aparecerán cuando los equipos sincronicen sus evidencias.</p>}</section>}
+      {tab === "evidences" && <section className="panel admin-table"><div className="panel-heading"><div><span className="eyebrow">ARCHIVO DEL RALLY</span><h3>Evidencias y respuestas</h3></div><span className="count-pill">{(data.evidences?.length || 0) + (data.submissions?.length || 0)}</span></div>
+        {data.evidences?.length ? <div className="admin-team-list">{[...data.evidences].sort((a, b) => (a.reviewStatus === "PENDING" ? -1 : 0) - (b.reviewStatus === "PENDING" ? -1 : 0)).map(item => <div className="checkpoint-row evidence-row" key={item.id}><span className="checkpoint-order">{item.type === "PHOTO" ? <Camera size={16}/> : <Activity size={16}/>}</span><div><strong>{item.teamName} · Estación {item.checkpointPosition}</strong><span>{item.type === "PHOTO" ? "Fotografía" : "Audio"} · {new Date(item.receivedAt).toLocaleString("es-CO")}{item.late ? " · sincronizada tarde" : ""}</span><span className={`review-label ${String(item.reviewStatus || "").toLowerCase()}`}>{item.reviewStatus === "PENDING" ? "Pendiente de aprobación" : item.reviewStatus === "APPROVED" ? "Aprobada" : item.reviewStatus === "REJECTED" ? `Rechazada${item.reviewNote ? ` · ${item.reviewNote}` : ""}` : "Recibida"}</span></div><div className="evidence-actions"><button type="button" className="text-link" onClick={() => onEvidence(rally.id, item.id)}>Abrir</button>{item.type === "PHOTO" && item.reviewStatus === "PENDING" && <><button type="button" className="button button-primary review-button" disabled={busy} onClick={() => onReview(item.id, "APPROVE")}>Aprobar</button><button type="button" className="button button-danger review-button" disabled={busy} onClick={() => onReview(item.id, "REJECT")}>Rechazar</button></>}</div></div>)}</div> : <p className="muted-text">Las fotos y audios aparecerán cuando los equipos sincronicen sus evidencias.</p>}
+        <h4 className="submission-list-title">Respuestas de los retos</h4>{data.submissions?.length ? <div className="admin-team-list">{data.submissions.map(item => <div className="checkpoint-row submission-row" key={item.id}><span className="checkpoint-order"><BookOpen size={16}/></span><div><strong>{item.teamName} · Estación {item.checkpointPosition} · {item.checkpointTitle}</strong><span>Respondieron: “{item.answerText}”</span>{item.matchedAnswer && <span>Respuesta aceptada más cercana: “{item.matchedAnswer}”</span>}</div><span className={`review-label ${item.correct ? "approved" : "rejected"}`}>{item.correct ? "Correcta" : "Incorrecta"}</span></div>)}</div> : <p className="muted-text">Las respuestas escritas aparecerán aquí al enviarse.</p>}
+      </section>}
     </>}
   </div>;
 }
@@ -297,7 +322,7 @@ export default function App() {
   const [progress, setProgress] = useState(null);
   const [ranking, setRanking] = useState(null);
   const [proximity, setProximity] = useState(null);
-  const [adminData, setAdminData] = useState({ rallies: [], teams: [], checkpoints: [], evidences: [] });
+  const [adminData, setAdminData] = useState({ rallies: [], teams: [], checkpoints: [], evidences: [], submissions: [] });
   const [adminRallyId, setAdminRallyId] = useState("");
   const [adminTab, setAdminTab] = useState("overview");
   const [tick, setTick] = useState(0);
@@ -417,6 +442,7 @@ export default function App() {
             else if (note.type === "TIME_EXTENDED") notify(note.body || "Se amplió el tiempo del rally.");
             else if (note.type === "RALLY_FINISHED") notify(note.body || "El rally finalizó.");
             else if (note.type === "NEW_CLUE") notify("Hay una nueva pista disponible.");
+            else if (note.type === "EVIDENCE_REJECTED") notify(note.body || "La fotografía fue rechazada. Toma otra y vuelve a enviarla.");
             else if (note.type === "ROUTE_COMPLETED") notify("¡Ruta completada! Consulta el ranking.");
           }
         }
@@ -434,9 +460,11 @@ export default function App() {
     if (session?.role !== "team" || !("serviceWorker" in navigator)) return;
     const refresh = event => { if (event.data?.source === "cluekeeper-push") void refreshPlayer({ silent: true }); };
     const synced = () => void refreshPlayer({ silent: true });
+    const reconnected = () => void refreshPlayer({ silent: true });
     navigator.serviceWorker.addEventListener("message", refresh);
     window.addEventListener("cluekeeper:play-synced", synced);
-    return () => { navigator.serviceWorker.removeEventListener("message", refresh); window.removeEventListener("cluekeeper:play-synced", synced); };
+    window.addEventListener("cluekeeper:connection-restored", reconnected);
+    return () => { navigator.serviceWorker.removeEventListener("message", refresh); window.removeEventListener("cluekeeper:play-synced", synced); window.removeEventListener("cluekeeper:connection-restored", reconnected); };
   }, [session?.role, refreshPlayer]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 3500); return () => window.clearTimeout(timer); }, [toast]);
 
@@ -461,8 +489,11 @@ export default function App() {
   const loadAdminRally = async (id, rallyList = adminData.rallies) => {
     if (!id) return;
     const details = await api(`/admin/rallies/${id}`);
-    const received = await api(`/admin/rallies/${id}/evidences`).catch(() => ({ evidences: [] }));
-    setAdminRallyId(id); setAdminData({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], selected: details }); setTick(0); setClockNow(Date.now());
+    const [received, submissions] = await Promise.all([
+      api(`/admin/rallies/${id}/evidences`).catch(() => ({ evidences: [] })),
+      api(`/admin/rallies/${id}/submissions`).catch(() => ({ submissions: [] })),
+    ]);
+    setAdminRallyId(id); setAdminData({ rallies: rallyList, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], submissions: submissions.submissions || [], selected: details }); setTick(0); setClockNow(Date.now());
     if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
   };
   useEffect(() => {
@@ -473,14 +504,15 @@ export default function App() {
         const list = await api("/admin/rallies");
         if (!active) return;
         const preferred = list.rallies.find(item => item.id === adminRallyId) || list.rallies.find(item => item.code === "UPTC26") || list.rallies[0];
-        if (!preferred) { setAdminData({ rallies: list.rallies, teams: [], checkpoints: [], evidences: [] }); return; }
-        const [details, received] = await Promise.all([
+        if (!preferred) { setAdminData({ rallies: list.rallies, teams: [], checkpoints: [], evidences: [], submissions: [] }); return; }
+        const [details, received, submissions] = await Promise.all([
           api(`/admin/rallies/${preferred.id}`),
           api(`/admin/rallies/${preferred.id}/evidences`).catch(() => ({ evidences: [] })),
+          api(`/admin/rallies/${preferred.id}/submissions`).catch(() => ({ submissions: [] })),
         ]);
         if (!active) return;
         setAdminRallyId(preferred.id);
-        setAdminData({ rallies: list.rallies, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], selected: details });
+        setAdminData({ rallies: list.rallies, teams: details.teams || [], checkpoints: details.checkpoints || [], evidences: received.evidences || [], submissions: submissions.submissions || [], selected: details });
         setClockNow(Date.now());
         if (Number.isFinite(details.serverTime)) setClockOffset(details.serverTime - Date.now());
       } catch (e) { if (active) setError(e.message); }
@@ -524,7 +556,13 @@ export default function App() {
     const idempotencyKey = body.submissionId || crypto.randomUUID();
     try {
     const result = await api(`/checkpoints/${checkpointId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: { ...body, submissionId: idempotencyKey } });
-    if (result.completed) { await refreshPlayer(); if (result.finished) setPanel("ranking"); else if (result.next) setPanel("route"); }
+    if (result.pendingReview) {
+      await refreshPlayer({ silent: true });
+    } else if (result.completed) {
+      setRoute(result.finished ? { state: "ALL_COMPLETED", checkpoint: null } : { state: "ACTIVE", checkpoint: result.next });
+      setPanel(result.finished ? "ranking" : "route");
+      await refreshPlayer({ silent: true });
+    }
     return result;
     } catch (e) {
       if (e.code === "ALREADY_COMPLETED") { await refreshPlayer(); setPanel("route"); return { correct: false, completed: true, pointsAwarded: 0, replayed: true }; }
@@ -560,6 +598,16 @@ export default function App() {
     try { const csv = await api(`/admin/rallies/${rally.id}/report?format=csv`); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" })); link.download = `rally-${rally.code}-resultados.csv`; link.click(); URL.revokeObjectURL(link.href); notify("Reporte CSV descargado."); }
     catch (e) { setError(e.message); }
   };
+  const reviewEvidence = async (evidenceId, action) => {
+    const rally = adminData.selected; if (!rally) return;
+    setBusy(true); setError("");
+    try {
+      const result = await api(`/admin/rallies/${rally.id}/evidences/${evidenceId}/review`, { method: "POST", body: { action } });
+      const list = await api("/admin/rallies");
+      await loadAdminRally(rally.id, list.rallies);
+      notify(action === "APPROVE" ? `Foto aprobada. +${result.pointsAwarded} puntos; siguiente pista desbloqueada.` : "Foto rechazada. El equipo recibirá un aviso para intentarlo de nuevo.");
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
   const openQr = async (checkpointId, rallyId) => {
     try { const response = await fetch(apiUrl(`/admin/rallies/${rallyId}/checkpoints/${checkpointId}/qr`), { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {}, credentials: "include" }); if (!response.ok) throw new Error("No se pudo abrir el QR."); const svg = await response.text(); const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" })); window.open(url, "_blank", "noopener"); setTimeout(() => URL.revokeObjectURL(url), 60000); }
     catch (e) { setError(e.message); }
@@ -574,25 +622,30 @@ export default function App() {
   };
   const selectedAdmin = adminData.selected || adminData.rallies.find(item => item.id === adminRallyId);
   const endsAt = rallyData?.rally?.endsAt;
-  const remaining = Number.isFinite(endsAt) ? Math.max(0, Math.floor((endsAt - (clockNow + clockOffset)) / 1000)) : rallyData?.rally?.remainingSeconds != null ? Math.max(0, rallyData.rally.remainingSeconds - tick) : 0;
+  const rallyStatus = rallyData?.rally?.status;
+  const remaining = !rallyData?.rally ? null : rallyStatus === "NOT_STARTED" ? null : rallyStatus === "FINISHED" ? 0
+    : endsAt != null && Number.isFinite(Number(endsAt))
+      ? Math.max(0, Math.floor((Number(endsAt) - (clockNow + clockOffset)) / 1000))
+      : rallyData.rally.remainingSeconds != null && Number.isFinite(Number(rallyData.rally.remainingSeconds))
+        ? Math.max(0, Number(rallyData.rally.remainingSeconds) - tick) : null;
 
-  if (loading && !session) return <div className="app-shell"><main className="loading-shell"><div className="brand"><img className="brand-mark-image" src="/pwa-192x192.png" alt=""/><strong>ClueKeeper</strong></div><Skeleton rows={5}/></main></div>;
+  if (loading && !session) return <div className="app-shell"><main className="loading-shell"><div className="brand"><BrandMark/><strong>ClueKeeper</strong></div><Skeleton rows={5}/></main></div>;
   return <div className="app-shell">
-    <header className="topbar"><button type="button" className="brand" onClick={() => { setPanel("route"); }}><img className="brand-mark-image" src="/pwa-192x192.png" alt=""/><span><strong>ClueKeeper</strong><small>RALLY UPTC · TUNJA</small></span></button><div className="topbar-center">{session?.role === "team" && <span className="team-label"><Users size={15}/>{session.team.name}</span>}{session?.role === "organizer" && <span className="team-label"><ShieldCheck size={15}/>{session.organizer.name || session.organizer.email}</span>}</div>{session && <button type="button" className="profile-button" title="Cerrar sesión" aria-label="Cerrar sesión" onClick={logout}><LogOut size={18}/></button>}</header>
+    <header className="topbar"><button type="button" className="brand" onClick={() => { setPanel("route"); }}><BrandMark/><span><strong>ClueKeeper</strong><small>RALLY UPTC · TUNJA</small></span></button><div className="topbar-center">{session?.role === "team" && <span className="team-label"><Users size={15}/>{session.team.name}</span>}{session?.role === "organizer" && <span className="team-label"><ShieldCheck size={15}/>{session.organizer.name || session.organizer.email}</span>}</div>{session && <button type="button" className="profile-button" title="Cerrar sesión" aria-label="Cerrar sesión" onClick={logout}><LogOut size={18}/></button>}</header>
     <main className="page-content">
       {!session && !authMode && <AccessPanel busy={busy} onJoin={join} onOrganizer={() => setAuthMode(true)} initialCode={new URLSearchParams(window.location.search).get("code") || "UPTC26"}/>}
       {!session && authMode && <OrganizerAccess onLogin={organizerLogin} onBack={() => setAuthMode(false)}/>}
-      {session?.role === "team" && <><div className="page-heading"><div><span className="eyebrow">UNIVERSIDAD PEDAGÓGICA Y TECNOLÓGICA DE COLOMBIA</span><h1>{panel === "route" ? "Explora el campus" : panel === "challenge" ? "Reto activo" : panel === "progress" ? "Tu bitácora" : "Marcador"}</h1></div><div className="header-timer"><Clock3 size={18}/><div><small>TIEMPO RESTANTE</small><strong>{formatDuration(remaining)}</strong></div></div></div>
+      {session?.role === "team" && <><div className="page-heading"><div><span className="eyebrow">UNIVERSIDAD PEDAGÓGICA Y TECNOLÓGICA DE COLOMBIA</span><h1>{panel === "route" ? "Explora el campus" : panel === "challenge" ? "Reto activo" : panel === "progress" ? "Tu bitácora" : "Marcador"}</h1><span className={`rally-status-chip ${String(rallyData?.rally?.status || "NOT_STARTED").toLowerCase()}`}><i/>{rallyData?.rally?.status === "IN_PROGRESS" ? "Rally en curso" : rallyData?.rally?.status === "FINISHED" ? "Rally finalizado" : "Rally por iniciar"}</span></div><div className="header-timer"><Clock3 size={18}/><div><small>{rallyData?.rally?.status === "NOT_STARTED" ? "DURACIÓN DEL RALLY" : "TIEMPO RESTANTE"}</small><strong>{formatDuration(rallyData?.rally?.status === "NOT_STARTED" ? Number(rallyData.rally.durationMinutes) * 60 : remaining)}</strong></div></div></div>
         <PageTabs items={PLAYER_NAV} value={panel} onChange={setPanel} label="Secciones del rally"/>
         <PushToggle/>
         {error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setError(""); refreshPlayer(); }} aria-label="Reintentar"><RefreshCw size={16}/></button></div>}
         {panel === "route" && <RoutePanel route={route} progress={progress} rallyStatus={rallyData?.rally?.status} onRanking={() => setPanel("ranking")} onRefresh={refreshPlayer} loading={loading} geo={geo} proximity={proximity} busy={busy} onProximity={async () => { try { const result = await proximityRequest(route?.checkpoint?.id); setProximity(result); } catch (e) { setError(e.message); } }}/>}
-        {panel === "challenge" && <ChallengePanel route={route} onArrive={arrive} onSubmit={submit} busy={busy} proximity={proximity} geo={geo} onProximity={proximityRequest} notify={notify}/>}
+        {panel === "challenge" && <ChallengePanel route={route} progress={progress} onArrive={arrive} onSubmit={submit} busy={busy} proximity={proximity} geo={geo} onProximity={proximityRequest} notify={notify}/>}
         {panel === "progress" && <ProgressPanel progress={progress} rally={rallyData} remaining={remaining}/>}
         {panel === "ranking" && <RankingPanel data={ranking} teamId={rallyData?.team?.id}/>}
-        <div className="sync-strip"><span className="sync-cloud"><Cloud size={19}/></span><div><strong>Progreso protegido</strong><span>Las evidencias se guardan en este dispositivo y se sincronizan al recuperar conexión.</span></div><span className="offline-indicator"><Wifi size={15}/> {navigator.onLine ? "Conectado" : "Sin conexión"}</span></div><details className="sync-details"><summary>Estado de sincronización</summary><SyncStatus/></details>
+        <div className="sync-strip"><span className="sync-cloud"><Cloud size={19}/></span><div><strong>Progreso protegido</strong><span>Las evidencias se guardan en este dispositivo y se sincronizan al recuperar conexión.</span></div><span className="offline-indicator"><Wifi size={15}/> {navigator.onLine ? "Conectado" : "Sin conexión"}</span></div><details className="sync-details"><summary>Estado de sincronización</summary><SyncStatus onNotify={notify}/></details>
       </>}
-      {session?.role === "organizer" && <><PageTabs items={ADMIN_NAV} value={adminTab} onChange={setAdminTab} label="Panel de organización"/>{error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Cerrar"><X size={16}/></button></div>}<OrganizerPanel data={adminData} selected={selectedAdmin} onSelect={id => loadAdminRally(id)} onRefresh={() => loadAdminRally(adminRallyId)} onControl={control} onNewEdition={newEdition} busy={busy} onExport={exportReport} onQr={openQr} onJoinQr={openJoinQr} onEvidence={openEvidence} tab={adminTab} tick={tick}/><div className="admin-logout"><button type="button" className="text-button" onClick={logout}>Cerrar sesión</button></div></>}
+      {session?.role === "organizer" && <><PageTabs items={ADMIN_NAV} value={adminTab} onChange={setAdminTab} label="Panel de organización"/>{error && <div className="notice-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="Cerrar"><X size={16}/></button></div>}<OrganizerPanel data={adminData} selected={selectedAdmin} onSelect={id => loadAdminRally(id)} onRefresh={() => loadAdminRally(adminRallyId)} onControl={control} onNewEdition={newEdition} onReview={reviewEvidence} busy={busy} onExport={exportReport} onQr={openQr} onJoinQr={openJoinQr} onEvidence={openEvidence} tab={adminTab} tick={tick}/><div className="admin-logout"><button type="button" className="text-button" onClick={logout}>Cerrar sesión</button></div></>}
     </main>
     {toast && <div className="toast" role="status"><CheckCircle2 size={17}/>{toast}</div>}
   </div>;

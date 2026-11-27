@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/cluekeeperDB";
 import {
@@ -9,8 +9,9 @@ import {
 } from "../services/evidenceSync";
 import { recoverInterruptedActions, syncPlayActions } from "../services/playSync";
 
-export default function SyncStatus() {
+export default function SyncStatus({ onNotify = () => {} }) {
   const [online, setOnline] = useState(navigator.onLine);
+  const onlineRef = useRef(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -60,19 +61,33 @@ export default function SyncStatus() {
       if (!active) return;
 
       const connected = navigator.onLine;
+      onlineRef.current = connected;
       setOnline(connected);
 
       return connected;
     }
 
     function onOnline() {
+      const wasOffline = !onlineRef.current;
       if (refreshConnectionStatus() && isSyncConfigured()) {
-        syncEvidences().then(syncPlayActions).catch(console.error);
+        if (wasOffline) window.dispatchEvent(new CustomEvent('cluekeeper:connection-restored'));
+        syncEvidences().then(async evidenceResult => {
+          const actionResult = await syncPlayActions();
+          const sent = evidenceResult.sent + actionResult.sent;
+          if (wasOffline) onNotify(sent
+            ? `Conexión recuperada. Se sincronizaron ${evidenceResult.sent} evidencias y ${actionResult.sent} acciones.`
+            : 'Conexión recuperada. No quedan archivos pendientes por sincronizar.');
+        }).catch(console.error);
+      } else if (wasOffline) {
+        window.dispatchEvent(new CustomEvent('cluekeeper:connection-restored'));
+        onNotify('Conexión recuperada. Tus datos siguen guardados en este dispositivo.');
       }
     }
 
     function onOffline() {
+      const wasOnline = onlineRef.current;
       refreshConnectionStatus();
+      if (wasOnline) onNotify('Se perdió la conexión. Las evidencias quedan guardadas y se enviarán al reconectar.');
     }
 
     async function initialize() {
@@ -126,7 +141,7 @@ export default function SyncStatus() {
         onVisibilityChange
       );
     };
-  }, []);
+  }, [onNotify]);
 
   return (
     <section className="sync-status">

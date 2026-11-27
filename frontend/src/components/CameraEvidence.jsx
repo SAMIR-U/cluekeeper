@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { Camera, ImagePlus, Trash2 } from "lucide-react";
 import { db, savePhotoEvidence, deleteEvidence } from "../db/cluekeeperDB";
 import "./CameraEvidence.css";
 
@@ -59,6 +60,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
 
   const [cameraActive, setCameraActive] = useState(false);
   const [photo, setPhoto] = useState(null);
+  const [photoName, setPhotoName] = useState("");
   const [photoVersion, setPhotoVersion] = useState(0);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -106,6 +108,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
     setError("");
     setMessage("");
     setPhoto(null);
+    setPhotoName("");
     stopCamera();
 
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -173,6 +176,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
         }
 
         setPhoto(blob);
+        setPhotoName("Foto tomada con la cámara");
         setPhotoVersion(version => version + 1);
         stopCamera();
       },
@@ -195,6 +199,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
     setError("");
     try {
       setPhoto(await toJpeg(file));
+      setPhotoName(file.name);
       setPhotoVersion(version => version + 1);
     } catch {
       setError("No se pudo convertir esta imagen. Prueba guardarla como JPEG y vuelve a seleccionarla.");
@@ -224,17 +229,19 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
       <h2>HU-11 · Evidencia fotográfica</h2>
       <p>Checkpoint de prueba: {checkpointId}</p>
 
-      <button onClick={startCamera}>Abrir cámara</button>
-
-      <label className="file-label">
-        Usar cámara del teléfono o seleccionar imagen
+      <div className="photo-actions">
+        <button type="button" onClick={startCamera}><Camera size={17}/> Abrir cámara</button>
+        <label className="file-picker">
+          <ImagePlus size={17}/><span>Elegir imagen</span>
         <input
           type="file"
           accept="image/*"
           capture="environment"
           onChange={handleFile}
         />
-      </label>
+        </label>
+      </div>
+      {photoName && <p className="photo-filename" title={photoName}>{photoName}</p>}
 
       {cameraActive && (
         <div>
@@ -251,7 +258,7 @@ export default function CameraEvidence({ checkpointId = "checkpoint-demo" }) {
           <button onClick={savePhoto} disabled={saving}>
             {saving ? "Guardando..." : "Guardar evidencia"}
           </button>
-          <button onClick={() => setPhoto(null)}>Descartar fotografía</button>
+          <button type="button" className="photo-discard" onClick={() => { setPhoto(null); setPhotoName(""); }}><Trash2 size={16}/> Descartar fotografía</button>
         </div>
       )}
 

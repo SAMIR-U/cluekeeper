@@ -29,10 +29,12 @@ export async function getPushState() {
 
 export async function enablePush() {
   if (!pushSupported()) throw new Error('Este navegador no admite notificaciones push.');
-  const { enabled, publicKey } = await api('/push/public-key');
-  if (!enabled || !publicKey) throw new Error('Las notificaciones no están configuradas en el servidor.');
+  // Pide permiso mientras sigue vigente el gesto del usuario; primero hacer una petición
+  // de red puede hacer que Safari/Chrome ignore el permiso por falta de interacción.
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') throw new Error('Permite las notificaciones desde los ajustes del navegador.');
+  const { enabled, publicKey } = await api('/push/public-key');
+  if (!enabled || !publicKey) throw new Error('Las notificaciones no están configuradas en el servidor.');
 
   const { registration, subscription: current } = await getRegistrationAndSubscription();
   const key = keyToBytes(publicKey);
@@ -61,4 +63,8 @@ export async function syncPushSubscription() {
   if (!pushSupported() || Notification.permission !== 'granted') return;
   const { subscription } = await getRegistrationAndSubscription();
   if (subscription) await api('/push/subscribe', { method: 'POST', body: subscription.toJSON() });
+}
+
+export async function testPush() {
+  return api('/push/test', { method: 'POST', body: {} });
 }

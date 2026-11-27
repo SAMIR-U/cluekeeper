@@ -86,8 +86,13 @@ CREATE TABLE IF NOT EXISTS submissions (
   late          INTEGER NOT NULL DEFAULT 0,
   captured_at   BIGINT NOT NULL,
   created_at    BIGINT NOT NULL,
-  result_json   TEXT NOT NULL
+  result_json   TEXT NOT NULL,
+  answer_text   TEXT,
+  matched_answer TEXT
 );
+
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS answer_text TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS matched_answer TEXT;
 
 -- Las fotos y audios se guardan en la base de datos: el servicio no necesita disco persistente
 CREATE TABLE IF NOT EXISTS evidences (
@@ -101,6 +106,17 @@ CREATE TABLE IF NOT EXISTS evidences (
   late          INTEGER NOT NULL DEFAULT 0,
   captured_at   BIGINT NOT NULL,
   received_at   BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS photo_reviews (
+  evidence_id  TEXT PRIMARY KEY REFERENCES evidences(id) ON DELETE CASCADE,
+  team_id      TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  checkpoint_id TEXT NOT NULL REFERENCES checkpoints(id) ON DELETE CASCADE,
+  submission_id TEXT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+  status       TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','APPROVED','REJECTED')),
+  submitted_at BIGINT NOT NULL,
+  reviewed_at  BIGINT,
+  review_note  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
@@ -139,6 +155,7 @@ CREATE INDEX IF NOT EXISTS idx_push_rally ON push_subscriptions(rally_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_rally ON notifications(rally_id, id);
 CREATE INDEX IF NOT EXISTS idx_evidences_cp ON evidences(team_id, checkpoint_id);
 CREATE INDEX IF NOT EXISTS idx_teams_rally ON teams(rally_id);
+CREATE INDEX IF NOT EXISTS idx_photo_reviews_status ON photo_reviews(status, submitted_at);
 `;
 
 /* ---------- Drivers ---------- */
